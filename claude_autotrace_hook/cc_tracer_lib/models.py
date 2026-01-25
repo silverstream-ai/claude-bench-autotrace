@@ -117,9 +117,11 @@ class HookEvent(BaseModel):
 
 
 class ClaudeCodeTracingSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CLAUDE_CODE_", env_file=ENV_FILE, extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="CLAUDE_CODE_", env_file=ENV_FILE, extra="ignore"
+    )
 
-    collector_base_url: str = Field(default="http://localhost:8080")
+    collector_base_url: str | None = None
     endpoint_code: str | None = None
     model: str = Field(default="claude-code")
     harness: str = Field(default="claude-code-hooks")
