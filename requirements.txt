@@ -1,0 +1,2 @@
+pydantic-settings
+opentelemetry-exporter-otlp-proto-http
