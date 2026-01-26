@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import logging
 import time
@@ -5,6 +6,7 @@ from typing import Any, Self
 from uuid import uuid4
 
 from opentelemetry.trace import Tracer
+from pydantic import TypeAdapter
 
 from cc_tracer_lib.models import (
     AL2_EXPERIMENT,
@@ -13,11 +15,18 @@ from cc_tracer_lib.models import (
     THINK_MAX_LENGTH,
     TYPE_EPISODE,
     TYPE_STEP,
+    ChatMessage,
+    EpisodeState,
     HookEvent,
+    MessageRole,
     SessionState,
 )
 from cc_tracer_lib.spans import make_context, send_span
-from cc_tracer_lib.transcript import extract_think_for_tool, truncate
+from cc_tracer_lib.transcript import (
+    extract_chat_from_transcript,
+    extract_think_for_tool,
+    truncate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,82 +47,158 @@ class SessionStateManager:
         SessionState.delete(session_id)
 
     def is_episode_active(self) -> bool:
-        return self._state.episode_span_id is not None
+        return self._state.episode is not None
 
     def start_episode(self, prompt: str) -> None:
         if self.is_episode_active():
             logger.warning("Starting new episode while one is already active")
 
         logger.info("Starting episode, trace id: %s", self._state.trace_id)
-        self._state = SessionState(
-            trace_id=self._state.trace_id,
-            episode_span_id=str(uuid4()),
-            episode_start_ns=time.time_ns(),
+        self._state.episode = EpisodeState(
+            span_id=uuid4(),
+            start_ns=time.time_ns(),
             prompt_metadata_id=str(uuid4()),
             prompt_received_ns=time.time_ns(),
             prompt_text=prompt,
         )
 
-    def end_episode(self) -> tuple[str, int, int, str | None] | None:
-        if self._state.episode_span_id is None:
+    def end_episode(self) -> EpisodeState | None:
+        if self._state.episode is None:
             return None
+        result = self._state.episode
+        self._state.episode = None
+        return result
 
-        assert self._state.episode_start_ns is not None
-        return (
-            self._state.episode_span_id,
-            self._state.episode_start_ns,
-            time.time_ns(),
-            self._state.prompt_text,
+    def add_chat_message(self, chat_msg: str, role: MessageRole) -> None:
+        if self._state.episode is None:
+            logger.warning("Updating prompt without active episode")
+            return
+        self._state.chat_history.append(
+            ChatMessage(
+                message=chat_msg,
+                role=role,
+                timestamp=datetime.now().timestamp(),
+            )
         )
 
     def update_prompt(self, prompt: str) -> None:
-        self._state = SessionState(
-            trace_id=self._state.trace_id,
-            episode_span_id=self._state.episode_span_id,
-            episode_start_ns=self._state.episode_start_ns,
-            prompt_text=prompt,
-            prompt_metadata_id=str(uuid4()),
-            prompt_received_ns=time.time_ns(),
-        )
+        if self._state.episode is None:
+            logger.warning("Updating prompt without active episode")
+            return
+        self._state.episode.prompt_text = prompt
+        self._state.episode.prompt_metadata_id = str(uuid4())
+        self._state.episode.prompt_received_ns = time.time_ns()
 
-    def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
-        episode_data = self.end_episode()
-        if not episode_data:
+    def _check_transcript_for_new_chats(
+        self, tracer: Tracer, transcript_path: str
+    ) -> None:
+        # Parse transcript for new chat messages from the assistant, and sends spans accordingly.
+        # This solution is horrible, but as of today there's no way for a hook to get data regarding assistant
+        # responses/messages :(
+        transcript_chat = extract_chat_from_transcript(transcript_path)
+        if transcript_chat is None:
+            logger.warning("Failed to extract chat from transcript")
             return
 
-        span_id, start_ns, end_ns, prompt = episode_data
-        task_name = truncate(prompt, 50).replace("\n", " ") if prompt else "turn"
+        logger.debug(
+            "Extracted %d chat messages from transcript.", len(transcript_chat)
+        )
+        new = self._state.check_new_assistant_messages(transcript_chat)
+        episode = self._state.episode
+        if episode is not None and len(new) > 0:
+            logger.info(
+                "Found %d new chat messages in transcript, creating spans for those",
+                len(new),
+            )
+            for n in new:
+                attributes: dict[str, Any] = {
+                    AL2_TYPE: TYPE_STEP,
+                    AL2_NAME: "chat",
+                    AL2_EXPERIMENT: "claude-code-session",
+                    "agent_output": json.dumps(
+                        {
+                            "actions": [{"name": "Chat", "arguments": n.model_dump()}],
+                            "llm_output": {},
+                        }
+                    ),
+                }
+                attributes["chat_messages_json"] = (
+                    TypeAdapter(list[ChatMessage])
+                    .dump_json(self._state.chat_history)
+                    .decode("utf-8")
+                )
+
+                send_span(
+                    tracer,
+                    name="claude_code.chat",
+                    attributes=attributes,
+                    start_time_ns=time.time_ns() - 10,
+                    end_time_ns=time.time_ns(),
+                    context=make_context(self._state.trace_id, episode.span_id),
+                    trace_id=self._state.trace_id,
+                )
+        self._state.add_new_assistant_messages(new)
+
+    def handle_notification(self, tracer: Tracer, event: HookEvent) -> None:
+        if self._state.episode is None:
+            logger.warning("Notification received without an active episode")
+            return
+
+        self._check_transcript_for_new_chats(tracer, event.transcript_path)
+
+    def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
+        self._check_transcript_for_new_chats(tracer, event.transcript_path)
+
+        episode_data = self.end_episode()
+        if episode_data is None:
+            return
+
+        task_name = (
+            truncate(episode_data.prompt_text, 50).replace("\n", " ")
+            if episode_data.prompt_text is not None
+            else "turn"
+        )
 
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_EPISODE,
             AL2_NAME: task_name,
             AL2_EXPERIMENT: "claude-code-session",
         }
-        if prompt:
-            truncated = truncate(prompt, 200)
-            attributes["chat_messages"] = json.dumps([{"role": "user", "content": truncated}])
+        attributes["chat_messages_json"] = (
+            TypeAdapter(list[ChatMessage])
+            .dump_json(self._state.chat_history)
+            .decode("utf-8")
+        )
 
         send_span(
             tracer,
             name="claude_code.turn",
             attributes=attributes,
-            start_time_ns=start_ns,
-            end_time_ns=end_ns,
+            start_time_ns=episode_data.start_ns,
+            end_time_ns=time.time_ns(),
             context=make_context(self._state.trace_id),
-            explicit_span_id=span_id,
             trace_id=self._state.trace_id,
+            explicit_span_id=episode_data.span_id,
         )
 
-        self._state = SessionState(trace_id=self._state.trace_id)
+        self._state.episode = None
 
-    def handle_tool_use(self, tracer: Tracer, event: HookEvent, is_post: bool) -> None:
+    def handle_tool_selected(self, event: HookEvent) -> None:
+        if event.tool_use_id is not None:
+            tool_use_id = event.tool_use_id
+        elif event.tool_name is not None:
+            tool_use_id = event.tool_name
+        else:
+            tool_use_id = "unknown"
+
+        self._state.pending_tools[tool_use_id] = time.time_ns()
+
+    def handle_tool_use(self, tracer: Tracer, event: HookEvent) -> None:
         tool_use_id = event.tool_use_id or event.tool_name or "unknown"
 
-        if not is_post:
-            self._state.pending_tools[tool_use_id] = time.time_ns()
-            return
-
-        start_time_ns = self._state.pending_tools.pop(tool_use_id, None) or time.time_ns()
+        start_time_ns = (
+            self._state.pending_tools.pop(tool_use_id, None) or time.time_ns()
+        )
         end_time_ns = time.time_ns()
 
         attributes: dict[str, Any] = {
@@ -122,6 +207,11 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
 
+        attributes["chat_messages_json"] = (
+            TypeAdapter(list[ChatMessage])
+            .dump_json(self._state.chat_history)
+            .decode("utf-8")
+        )
         think = extract_think_for_tool(event.transcript_path, event.tool_use_id)
         attributes["think"] = truncate(think, THINK_MAX_LENGTH) if think else "N/A"
 
@@ -133,13 +223,16 @@ class SessionStateManager:
             attributes["agent_output"] = json.dumps(agent_output)
 
         logging.info("Sending span to OTEL collector.")
+        episode_span_id = (
+            self._state.episode.span_id if self._state.episode is not None else None
+        )
         send_span(
             tracer,
             name=f"claude_code.tool.{event.tool_name}",
             attributes=attributes,
             start_time_ns=start_time_ns,
             end_time_ns=end_time_ns,
-            context=make_context(self._state.trace_id, self._state.episode_span_id),
+            context=make_context(self._state.trace_id, episode_span_id),
             trace_id=self._state.trace_id,
         )
 

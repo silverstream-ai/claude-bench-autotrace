@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.context import Context
@@ -27,17 +28,17 @@ from cc_tracer_lib.models import (
 )
 
 
-def uuid_to_int(uuid_str: str, bits: int) -> int:
-    hex_str = uuid_str.replace("-", "")
+def uuid_to_int(uuid: UUID, bits: int) -> int:
+    hex_str = str(uuid).replace("-", "")
     if bits == 64:
         hex_str = hex_str[:16]
     return int(hex_str, 16)
 
 
-def make_context(trace_id: str, parent_span_id: str | None = None) -> Context:
+def make_context(trace_id: UUID, parent_span_id: UUID | None = None) -> Context:
     span_context = SpanContext(
         trace_id=uuid_to_int(trace_id, 128),
-        span_id=uuid_to_int(parent_span_id, 64) if parent_span_id else 0,
+        span_id=uuid_to_int(parent_span_id, 64) if parent_span_id is not None else 0,
         is_remote=False,
         trace_flags=TraceFlags(TraceFlags.SAMPLED),
     )
@@ -63,6 +64,18 @@ def setup_tracer(
     return trace.get_tracer(INSTRUMENTATION_NAME, INSTRUMENTATION_VERSION)
 
 
+def _is_otel_serializable(value: Any) -> bool:
+    """
+    OTel only supports some data types
+    """
+    supported_otel_types = str | int | float | bool
+    if isinstance(value, supported_otel_types):
+        return True
+    return isinstance(value, list) and all(
+        isinstance(x, supported_otel_types) for x in value
+    )
+
+
 def send_span(
     tracer: Tracer,
     name: str,
@@ -70,26 +83,24 @@ def send_span(
     start_time_ns: int,
     end_time_ns: int,
     context: Context,
-    explicit_span_id: str | None = None,
-    trace_id: str | None = None,
+    trace_id: UUID,
+    explicit_span_id: UUID | None = None,
 ) -> None:
     span = tracer.start_span(
         name, kind=SpanKind.INTERNAL, start_time=start_time_ns, context=context
     )
     for key, value in attributes.items():
-        span.set_attribute(
-            key, value if isinstance(value, str | int | float | bool) else str(value)
-        )
+        span.set_attribute(key, value if _is_otel_serializable(value) else str(value))
     span.set_status(Status(StatusCode.OK))
 
-    if explicit_span_id or trace_id:
-        span._context = SpanContext(  # type: ignore[attr-defined]
-            trace_id=uuid_to_int(trace_id, 128) if trace_id else span.context.trace_id,  # type: ignore[attr-defined]
-            span_id=uuid_to_int(explicit_span_id, 64)
-            if explicit_span_id
-            else span.context.span_id,  # type: ignore[attr-defined]
-            is_remote=False,
-            trace_flags=TraceFlags(TraceFlags.SAMPLED),
-        )
+    # WTF is this?
+    span._context = SpanContext(  # type: ignore[attr-defined]
+        trace_id=uuid_to_int(trace_id, 128),
+        span_id=uuid_to_int(explicit_span_id, 64)
+        if explicit_span_id is not None
+        else span.context.span_id,  # type: ignore[attr-defined]
+        is_remote=False,
+        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+    )
 
     span.end(end_time=end_time_ns)

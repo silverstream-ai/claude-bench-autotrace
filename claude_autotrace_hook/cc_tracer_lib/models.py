@@ -1,8 +1,11 @@
+from datetime import datetime
+from enum import StrEnum
+import logging
 import pathlib
-from typing import Any
-from uuid import uuid4
+from typing import Any, Self
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
@@ -27,8 +30,11 @@ TRACE_ENDPOINT_PATH = "/traces/collector/{}/v1/traces"
 SERVICE_NAME = "claude-code"
 
 
+logger = logging.getLogger(__name__)
+
+
 class ContentBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     type: str
     id: str | None = None
     name: str | None = None
@@ -39,7 +45,7 @@ class ContentBlock(BaseModel):
 
 
 class AssistantMessage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     model: str
     id: str
     type: str
@@ -51,12 +57,13 @@ class AssistantMessage(BaseModel):
 
 
 class TranscriptEntry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # TODO(#3264): this can be made much better with a discriminated union
+    model_config = ConfigDict(extra="ignore")
     type: str
     data: dict[str, Any] | None = None
     uuid: str | None = None
     parentToolUseID: str | None = None
-    timestamp: str | None = None
+    timestamp: datetime | None = None
     cwd: str | None = None
     gitBranch: str | None = None
     sessionId: str | None = None
@@ -95,9 +102,6 @@ class TranscriptEntry(BaseModel):
     content: str | list[Any] | None = None
 
 
-TranscriptAdapter = TypeAdapter(list[TranscriptEntry])
-
-
 class HookEvent(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -127,33 +131,41 @@ class ClaudeCodeTracingSettings(BaseSettings):
     harness: str = Field(default="claude-code-hooks")
 
 
-class SessionState(BaseModel):
-    trace_id: str
-    episode_span_id: str | None = None
-    episode_start_ns: int | None = None
+class MessageRole(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    INFO = "info"
+    INFEASIBLE = "infeasible"
 
+
+class ChatMessage(BaseModel):
+    role: MessageRole
+    message: str
+    timestamp: float
+
+
+class EpisodeState(BaseModel):
+    span_id: UUID
+    start_ns: int
     prompt_text: str | None = None
     prompt_received_ns: int | None = None
     prompt_metadata_id: str | None = None
 
+
+class SessionState(BaseModel):
+    trace_id: UUID
+    chat_history: list[ChatMessage] = []
+    episode: EpisodeState | None = None
     pending_tools: dict[str, int] = {}
 
-    @model_validator(mode="after")
-    def validate_episode_consistency(self) -> "SessionState":
-        if (self.episode_span_id is not None) != (self.episode_start_ns is not None):
-            raise ValueError(
-                f"episode_span_id and episode_start_ns must both be None or both be set: "
-                f"span_id={self.episode_span_id}, start_ns={self.episode_start_ns}"
-            )
-        return self
-
     @classmethod
-    def from_session_id(cls, session_id: str) -> "SessionState":
+    def from_session_id(cls, session_id: str) -> Self:
         STATE_DIR.mkdir(exist_ok=True)
         path = STATE_DIR / f"{session_id}.json"
         if path.exists():
             return cls.model_validate_json(path.read_text())
-        return cls(trace_id=str(uuid4()))
+        return cls(trace_id=uuid4())
 
     def save(self, session_id: str) -> None:
         STATE_DIR.mkdir(exist_ok=True)
@@ -165,3 +177,57 @@ class SessionState(BaseModel):
         path = STATE_DIR / f"{session_id}.json"
         if path.exists():
             path.unlink()
+
+    def check_new_assistant_messages(
+        self, chat: list[ChatMessage]
+    ) -> list[ChatMessage]:
+        """
+        Filters all new (i.e. previously unknown for this session) messages from the assistant.
+        """
+        # set of already-known assistant messages
+        seen = {
+            (m.message, m.timestamp)
+            for m in self.chat_history
+            if m.role is MessageRole.ASSISTANT
+        }
+
+        # de-dupe incoming assistant messages + filter out already-known ones (O(n))
+        new: list[ChatMessage] = []
+        for m in chat:
+            if m.role is not MessageRole.ASSISTANT:
+                raise ValueError(
+                    "merge_new_assistant_messages called with message role: %s", m.role
+                )
+            k = (m.message, m.timestamp)
+            if k in seen:
+                continue
+            seen.add(k)
+            new.append(m)
+
+        new.sort(key=lambda m: m.timestamp)
+        return new
+
+    def add_new_assistant_messages(self, new: list[ChatMessage]) -> None:
+        """
+        Checks all messages from the assistant into the state.
+        """
+        logger.debug("Found %d new chat messages, appending them in chat", len(new))
+
+        # merge two sorted lists in O(n+m)
+        merged: list[ChatMessage] = []
+        old = self.chat_history
+        i = 0
+        j = 0
+        while i < len(old) and j < len(new):
+            if old[i].timestamp <= new[j].timestamp:
+                merged.append(old[i])
+                i += 1
+            else:
+                merged.append(new[j])
+                j += 1
+        if i < len(old):
+            merged.extend(old[i:])
+        if j < len(new):
+            merged.extend(new[j:])
+
+        self.chat_history = merged

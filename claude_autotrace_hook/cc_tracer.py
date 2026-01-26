@@ -8,6 +8,7 @@ from cc_tracer_lib.models import (
     ENV_FILE,
     ClaudeCodeTracingSettings,
     HookEvent,
+    MessageRole,
     SessionState,
 )
 from cc_tracer_lib.spans import setup_tracer
@@ -21,10 +22,11 @@ def process_event(
     if event.hook_event_name == "UserPromptSubmit" and event.prompt is None:
         raise ValueError("UserPromptSubmit event must have a prompt")
 
-    episode_was_inactive = not manager.is_episode_active()
+    episode_was_active = manager.is_episode_active()
     if (
-        event.hook_event_name in ("UserPromptSubmit", "PreToolUse", "PostToolUse")
-        and episode_was_inactive
+        event.hook_event_name
+        in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification")
+        and not episode_was_active
     ):
         if event.hook_event_name == "UserPromptSubmit":
             assert event.prompt is not None  # See check above
@@ -34,18 +36,23 @@ def process_event(
         manager.start_episode(prompt)
 
     if event.hook_event_name == "UserPromptSubmit":
-        if not episode_was_inactive:
-            assert event.prompt
+        assert event.prompt is not None  # See check above
+        manager.add_chat_message(event.prompt, MessageRole.USER)
+        if episode_was_active:
             manager.update_prompt(event.prompt)
     elif event.hook_event_name == "PreToolUse":
-        manager.handle_tool_use(tracer, event, is_post=False)
+        manager.handle_tool_selected(event)
     elif event.hook_event_name == "PostToolUse":
-        manager.handle_tool_use(tracer, event, is_post=True)
+        manager.handle_tool_use(tracer, event)
+    elif event.hook_event_name == "Notification":
+        manager.handle_notification(tracer, event)
     elif event.hook_event_name == "Stop":
         manager.handle_stop(tracer, event)
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
         return
+    else:
+        logging.info("Unknown event received: %s", event.hook_event_name)
 
     manager.save(event.session_id)
 
@@ -71,7 +78,7 @@ def main() -> None:
         return
 
     if event.hook_event_name == "SessionStart":
-        state = SessionState(trace_id=str(uuid4()))
+        state = SessionState(trace_id=uuid4())
         state.save(event.session_id)
         print(
             f'{{"status":"ok","message":"Telemetry active. Trace ID: {state.trace_id}"}}'
