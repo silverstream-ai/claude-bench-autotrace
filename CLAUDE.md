@@ -17,7 +17,7 @@ If tracing is disabled or erroring, set it up:
 2. Create `.env` with the endpoint URL and code provided by the user:
    ```
    CLAUDE_CODE_ENDPOINT_CODE=<code-from-user>
-   CLAUDE_CODE_COLLECTOR_BASE_URL=https://bench.silverstream.ai/traces # Or change if using a local collector, as requested by the user
+   CLAUDE_CODE_COLLECTOR_BASE_URL=https://bench.silverstream.ai # Or change if using a local collector, as requested by the user
    ```
 
 Hooks run on every tool use. After creating `.env`, you'll see `{"status":"ok",...}` on subsequent tool calls confirming telemetry is active.
