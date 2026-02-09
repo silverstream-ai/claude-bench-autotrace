@@ -129,6 +129,7 @@ class ClaudeCodeTracingSettings(BaseSettings):
     endpoint_code: str | None = None
     model: str = Field(default="claude-code")
     harness: str = Field(default="claude-code-hooks")
+    notify_sessions: bool = Field(default=True)
 
 
 class MessageRole(StrEnum):
@@ -160,12 +161,12 @@ class SessionState(BaseModel):
     pending_tools: dict[str, int] = {}
 
     @classmethod
-    def from_session_id(cls, session_id: str) -> Self:
+    def from_session_id(cls, session_id: str) -> Self | None:
         STATE_DIR.mkdir(exist_ok=True)
         path = STATE_DIR / f"{session_id}.json"
         if path.exists():
             return cls.model_validate_json(path.read_text())
-        return cls(trace_id=uuid4())
+        return None
 
     def save(self, session_id: str) -> None:
         STATE_DIR.mkdir(exist_ok=True)
