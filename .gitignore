@@ -3,3 +3,4 @@ __pycache__/
 settings.local.json
 venv/
 ss_claude_trace_hook.log
+.env

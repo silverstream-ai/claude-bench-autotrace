@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+
 import logging
 import sys
 from uuid import uuid4
@@ -9,7 +10,6 @@ from cc_tracer_lib.models import (
     ClaudeCodeTracingSettings,
     HookEvent,
     MessageRole,
-    SessionState,
 )
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
@@ -73,15 +73,16 @@ def main() -> None:
                 "Claude Code tracing disabled (set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
                 ENV_FILE,
             )
+
         else:
             logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
         return
 
+    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
     if event.hook_event_name == "SessionStart":
-        state = SessionState(trace_id=uuid4())
-        state.save(event.session_id)
+        manager.save(event.session_id)
         print(
-            f'{{"status":"ok","message":"Telemetry active. Trace ID: {state.trace_id}"}}'
+            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
         )
         logging.info("Started new session: %s", event.session_id)
         return
@@ -92,7 +93,6 @@ def main() -> None:
         model=settings.model,
         harness=settings.harness,
     )
-    manager = SessionStateManager.from_session_id(event.session_id)
     process_event(event, tracer, manager)
     print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 

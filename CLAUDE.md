@@ -21,3 +21,9 @@ If tracing is disabled or erroring, set it up:
    ```
 
 Hooks run on every tool use. After creating `.env`, you'll see `{"status":"ok",...}` on subsequent tool calls confirming telemetry is active.
+
+### Configuration options
+
+- `CLAUDE_CODE_ENDPOINT_CODE=<string> ` modifies the tracker associated with your runs.
+- `CLAUDE_CODE_COLLECTOR_BASE_URL=<url>` modifies the OTel server traces are sent to.
+- `CLAUDE_CODE_NOTIFY_SESSIONS=<bool>` (optional) toggles system notifications for the user when sessions are started.

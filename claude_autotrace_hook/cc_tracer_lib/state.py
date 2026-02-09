@@ -3,10 +3,12 @@ import json
 import logging
 import time
 from typing import Any, Self
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from opentelemetry.trace import Tracer
 from pydantic import TypeAdapter
+
+from notifications import send_start_notification
 
 from cc_tracer_lib.models import (
     AL2_EXPERIMENT,
@@ -36,8 +38,17 @@ class SessionStateManager:
         self._state = state
 
     @classmethod
-    def from_session_id(cls, session_id: str) -> Self:
+    def start_session(cls, notify: bool) -> Self:
+        state = SessionState(trace_id=uuid4())
+        if notify:
+            send_start_notification()
+        return cls(state)
+
+    @classmethod
+    def from_session_id(cls, session_id: str, notify_new_session: bool) -> Self:
         state = SessionState.from_session_id(session_id)
+        if state is None:
+            return cls.start_session(notify_new_session)
         return cls(state)
 
     def save(self, session_id: str) -> None:
@@ -80,6 +91,9 @@ class SessionStateManager:
                 timestamp=datetime.now().timestamp(),
             )
         )
+
+    def get_trace_id(self) -> UUID:
+        return self._state.trace_id
 
     def update_prompt(self, prompt: str) -> None:
         if self._state.episode is None:
