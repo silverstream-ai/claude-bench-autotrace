@@ -20,7 +20,7 @@ If tracing is disabled or erroring, set it up:
    CLAUDE_CODE_COLLECTOR_BASE_URL=https://bench.silverstream.ai # Or change if using a local collector, as requested by the user
    ```
 
-3. To install globally, integrate the contents of .claude/settings.json into the global settings.json in your home directory (~/.claude/settings.json).
+3. To install globally, integrate the contents of .claude/settings.json into the global settings.json in your home directory (~/.claude/settings.json), changing the hook commands to use absolute paths.
     - IMPORTANT: This file is the user's global Claude config. Make sure not to override it! You should _integrate_ the settings you read in this repository with the existing config.
 
 4. To uninstall globally, revert the changes you made to settings.json. IMPORTANT: Remember that this is the user's global config! Only revert changes specific to this hook and this repository's directory.
