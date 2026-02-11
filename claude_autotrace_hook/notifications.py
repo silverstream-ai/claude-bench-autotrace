@@ -36,4 +36,5 @@ def send_start_notification():
     notification.icon = (
         Path(__file__).parent.parent / "icons" / f"ss-logo-{best_size}.png"
     )
+    notification.application_name = "Silverstream Bench"
     notification.send()

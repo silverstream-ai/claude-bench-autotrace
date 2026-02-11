@@ -1,6 +1,6 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${CLAUDE_PROJECT_DIR}/venv"
+VENV_DIR="${SCRIPT_DIR}/../venv"
 VENV_PYTHON="${VENV_DIR}/bin/python3"
 
 # Check if CLAUDE_PROJECT_DIR is set
