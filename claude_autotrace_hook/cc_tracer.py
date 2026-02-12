@@ -9,6 +9,8 @@ from cc_tracer_lib.models import (
     ENV_FILE,
     ClaudeCodeTracingSettings,
     HookEvent,
+    SubagentStart,
+    SubagentStop,
     MessageRole,
 )
 from cc_tracer_lib.spans import setup_tracer
@@ -48,6 +50,11 @@ def process_event(
         manager.handle_notification(tracer, event)
     elif event.hook_event_name == "Stop":
         manager.handle_stop(tracer, event)
+    elif event.hook_event_name == "SubagentStart":
+        manager.handle_subagent_start(SubagentStart.from_hook_event(event))
+    elif event.hook_event_name == "SubagentStop":
+        logging.info("STOP EVENT!! %s", event)
+        manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
         return
@@ -60,6 +67,7 @@ def process_event(
 def main() -> None:
     settings = ClaudeCodeTracingSettings()
     event_data = json.load(sys.stdin)
+    logging.debug("Received event: %s", json.dumps(event_data, indent=4))
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
@@ -82,7 +90,7 @@ def main() -> None:
     if event.hook_event_name == "SessionStart":
         manager.save(event.session_id)
         print(
-            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
+                f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}", "systemMessage": "puzzi un sacco! WELCOME !"}}'
         )
         logging.info("Started new session: %s", event.session_id)
         return
@@ -94,9 +102,12 @@ def main() -> None:
         harness=settings.harness,
     )
     process_event(event, tracer, manager)
-    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+    #print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename="ss_claude_trace_hook.log", level=logging.INFO)
-    main()
+    logging.basicConfig(filename="ss_claude_trace_hook.log", level=logging.DEBUG)
+    try:
+        main()
+    except Exception:
+        logging.exception("Event processing failed")
