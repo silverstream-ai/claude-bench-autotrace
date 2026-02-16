@@ -190,10 +190,12 @@ class HookEvent(BaseModel):
     agent_transcript_path: str | None = None
 
 
-class SubagentStart(BaseModel, extra="ignore"):
+class SubagentStart(BaseModel):
     """
     Parsed SubagentStart event with only relevant fields.
     """
+
+    model_config = ConfigDict(extra="ignore")
 
     session_id: str
     transcript_path: str
@@ -257,7 +259,7 @@ class SubagentStop(BaseModel):
 
         if event.agent_id is None:
             raise ValueError(
-                "SubagentStop event missing required fields: agent_id and/or agent_type"
+                "SubagentStop event missing required field: agent_id"
             )
 
         if event.agent_transcript_path is None:
@@ -373,7 +375,7 @@ class SessionState(BaseModel):
     subagents: dict[str, SubagentState] = {}
     # https://github.com/anthropics/claude-code/issues/16424
     # There's currently no way to correlate agent ID with tool use.
-    # When pre-tool or post-tool uses are
+    # So we cache known parent/child relationships here.
     transcript_state: TranscriptState
 
     @classmethod

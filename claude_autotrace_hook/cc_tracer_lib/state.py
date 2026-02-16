@@ -234,22 +234,22 @@ class SessionStateManager:
             agent_id = step_parent.agent_id
             subagent_state = self._state.subagents.get(agent_id)
             if subagent_state is None:
-                logging.debug("Parent of `%s` is unknown agent %s", item_id, agent_id)
+                logger.debug("Parent of `%s` is unknown agent %s", item_id, agent_id)
                 return None
             parent_span = subagent_state.span_id
-            logging.debug(
+            logger.debug(
                 "Parent of `%s` is agent %s (span: %s)", item_id, agent_id, parent_span
             )
             return parent_span
 
         parent_tool_state = self._state.pending_tools.get(step_parent.tool_use_id)
         if parent_tool_state is None:
-            logging.debug(
+            logger.debug(
                 "Parent of `%s` is unknown tool %s", item_id, step_parent.tool_use_id
             )
             return None
         parent_span = parent_tool_state.span_id
-        logging.debug(
+        logger.debug(
             "Parent of `%s` is tool %s (span: %s)",
             item_id,
             step_parent.tool_use_id,
