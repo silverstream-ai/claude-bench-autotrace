@@ -101,7 +101,7 @@ def main() -> None:
         harness=settings.harness,
     )
     process_event(event, tracer, manager)
-    # print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
 if __name__ == "__main__":
