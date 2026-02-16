@@ -337,7 +337,6 @@ class SubagentState(BaseModel):
     start_time_ns: int
     agent_type: str
     span_id: UUID
-    parent_span_id: UUID | None
     transcript_state: TranscriptState
 
     def get_transcript_path(self, main_transcript_path: str) -> str:
@@ -346,13 +345,16 @@ class SubagentState(BaseModel):
         transcript_dir = p.parent / p.stem / "subagents"
         return str(transcript_dir / f"agent-{self.agent_id}.jsonl")
 
+class ToolState(BaseModel):
+    start_time_ns: int
+    span_id: UUID
 
 class SessionState(BaseModel):
     trace_id: UUID
     session_start_time: datetime
     chat_history: list[ChatMessage] = []
     episode: EpisodeState | None = None
-    pending_tools_start_time: dict[str, int] = {}
+    pending_tools: dict[str, ToolState] = {}
     subagents: dict[str, SubagentState] = {}
     # https://github.com/anthropics/claude-code/issues/16424
     # There's currently no way to correlate agent ID with tool use.

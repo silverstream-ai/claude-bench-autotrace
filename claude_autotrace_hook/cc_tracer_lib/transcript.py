@@ -135,7 +135,7 @@ def update_transcript(
         return
 
     # Single pass through entries to cache parent relationships
-    logging.info("%d entries in %s", len(entries), transcript_path)
+    logging.debug("%d entries in %s", len(entries), transcript_path)
     for entry in entries:
         # Check for progress entry indicating agent spawned by tool
         # It has type = progress, parentToolUseID=<parent tool>, data = {agentId=<child agent id>}
@@ -153,12 +153,10 @@ def update_transcript(
         # Check for assistant messages to cache tool parent relationships
         # It has agentId = <parent agentid>, message= {content: [... {type: tool_use, id: <child tool_use id>}]}
         elif entry.type == "assistant" and isinstance(entry.message, AssistantMessage):
-            logging.info("Assistant found")
             agent_id = entry.agentId
             if agent_id is not None:
                 for content in entry.message.content:
                     if content.type == "tool_use" and content.id:
-                        logging.info("Tool use found")
                         if content.id not in agent_state.tool_parents:
                             agent_state.tool_parents[content.id] = AgentParent(agent_id=agent_id)
                             logger.debug(
@@ -215,7 +213,7 @@ def search_tool_parent_in_transcript(transcript_path: str, state: TranscriptStat
     Returns:
         StepParent if found, None otherwise
     """
-    logging.info("Searching for tool use: %s in: %s", tool_use_id, transcript_path)
+    logging.debug("Searching for tool use: %s in: %s", tool_use_id, transcript_path)
     # Check cache first
     if tool_use_id in state.tool_parents:
         return state.tool_parents[tool_use_id]
@@ -225,4 +223,62 @@ def search_tool_parent_in_transcript(transcript_path: str, state: TranscriptStat
 
     # Return the tool's parent if we have it cached
     return state.tool_parents.get(tool_use_id)
+
+
+def search_agent_parent_in_transcript(transcript_path: str, state: TranscriptState, agent_id: str) -> StepParent | None:
+    """
+    Scan main transcript to cache all parent relationships.
+
+    Progress entries with parentToolUseID and data.agentId reveal that:
+    - The agent (data.agentId) is a child of the tool (parentToolUseID)
+    - This is cached as: agent_parents[agent_id] = ToolParent(tool_use_id=parentToolUseID)
+
+    Args:
+        transcript_path: Path to the main session transcript
+        state: TranscriptState to update with cached relationships
+        agent_id: The agent ID we're looking for the parent of
+
+    Returns:
+        StepParent if found, None otherwise
+    """
+    logging.debug("Searching for agent: %s in: %s", agent_id, transcript_path)
+    # Check cache first
+    if agent_id in state.agent_parents:
+        return state.agent_parents[agent_id]
+
+    # Update transcript to cache relationships
+    update_transcript(state, Path(transcript_path))
+
+    # Return the agent's parent if we have it cached
+    return state.agent_parents.get(agent_id)
+
+
+def search_agent_parent_in_subagent_transcript(
+    subagent_transcript_path: str,
+    agent_state: TranscriptState,
+    agent_id: str
+) -> StepParent | None:
+    """
+    Scan a subagent transcript to cache all agent parent relationships.
+
+    Scans for progress entries with parentToolUseID and data.agentId.
+
+    Args:
+        subagent_id: The subagent's ID
+        subagent_transcript_path: Path to the subagent's transcript
+        agent_state: TranscriptState for this specific subagent
+        agent_id: The agent ID we're looking for
+
+    Returns:
+        ToolParent if the agent is found in this subagent's transcript, None otherwise
+    """
+    # Check cache first
+    if agent_id in agent_state.agent_parents:
+        return agent_state.agent_parents[agent_id]
+
+    # Update transcript to cache relationships
+    update_transcript(agent_state, Path(subagent_transcript_path))
+
+    # Return the requested agent's parent if found
+    return agent_state.agent_parents.get(agent_id)
 

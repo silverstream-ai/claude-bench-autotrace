@@ -3,7 +3,6 @@ import json
 
 import logging
 import sys
-from uuid import uuid4
 
 from cc_tracer_lib.models import (
     ENV_FILE,
