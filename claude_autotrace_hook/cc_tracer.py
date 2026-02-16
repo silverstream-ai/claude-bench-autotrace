@@ -90,7 +90,7 @@ def main() -> None:
     if event.hook_event_name == "SessionStart":
         manager.save(event.session_id)
         print(
-            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}", "systemMessage": "puzzi un sacco! WELCOME !"}}'
+            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
         )
         logging.info("Started new session: %s", event.session_id)
         return
