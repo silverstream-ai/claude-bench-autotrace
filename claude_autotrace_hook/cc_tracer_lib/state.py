@@ -292,7 +292,7 @@ class SessionStateManager:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
 
-        logging.info("Sending span to OTEL collector.")
+        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.subagent.{agent.agent_type}",
@@ -447,7 +447,7 @@ class SessionStateManager:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
 
-        logging.info("Sending span to OTEL collector.")
+        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.tool.{event.tool_name}",
