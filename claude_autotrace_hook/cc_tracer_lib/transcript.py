@@ -166,8 +166,7 @@ def update_transcript(
 
 
 def search_tool_parent_in_subagent_transcript(
-    agent_id: str,
-    subagent_transcript_path: str,
+    subagent_transcript_path: Path,
     agent_state: TranscriptState,
     tool_use_id: str
 ) -> StepParent | None:
@@ -227,21 +226,17 @@ def search_tool_parent_in_transcript(transcript_path: str, state: TranscriptStat
 
 def search_agent_parent_in_transcript(transcript_path: str, state: TranscriptState, agent_id: str) -> StepParent | None:
     """
-    Scan main transcript to cache all parent relationships.
-
-    Progress entries with parentToolUseID and data.agentId reveal that:
-    - The agent (data.agentId) is a child of the tool (parentToolUseID)
-    - This is cached as: agent_parents[agent_id] = ToolParent(tool_use_id=parentToolUseID)
+    Scan a transcript transcript searching for the parent of an agent.
+    If a scan of the transcript is needed, all found relationships are cached.
 
     Args:
-        transcript_path: Path to the main session transcript
-        state: TranscriptState to update with cached relationships
-        agent_id: The agent ID we're looking for the parent of
+        transcript_path: Path to the subagent's transcript
+        agent_state: TranscriptState for this specific subagent
+        agent_id: The agent ID we're looking for
 
     Returns:
-        StepParent if found, None otherwise
+        StepParent if the agent is found in this subagent's transcript, None otherwise
     """
-    logging.debug("Searching for agent: %s in: %s", agent_id, transcript_path)
     # Check cache first
     if agent_id in state.agent_parents:
         return state.agent_parents[agent_id]
@@ -259,18 +254,16 @@ def search_agent_parent_in_subagent_transcript(
     agent_id: str
 ) -> StepParent | None:
     """
-    Scan a subagent transcript to cache all agent parent relationships.
-
-    Scans for progress entries with parentToolUseID and data.agentId.
+    Scan a subagent transcript searching for the parent of an agent.
+    If a scan of the transcript is needed, all found relationships are cached.
 
     Args:
-        subagent_id: The subagent's ID
         subagent_transcript_path: Path to the subagent's transcript
         agent_state: TranscriptState for this specific subagent
         agent_id: The agent ID we're looking for
 
     Returns:
-        ToolParent if the agent is found in this subagent's transcript, None otherwise
+        StepParent if the agent is found in this subagent's transcript, None otherwise
     """
     # Check cache first
     if agent_id in agent_state.agent_parents:
@@ -281,4 +274,3 @@ def search_agent_parent_in_subagent_transcript(
 
     # Return the requested agent's parent if found
     return agent_state.agent_parents.get(agent_id)
-

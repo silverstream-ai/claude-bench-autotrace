@@ -339,11 +339,11 @@ class SubagentState(BaseModel):
     span_id: UUID
     transcript_state: TranscriptState
 
-    def get_transcript_path(self, main_transcript_path: str) -> str:
+    def get_transcript_path(self, main_transcript_path: str) -> Path:
         """Get the path to this subagent's transcript file."""
         p = Path(main_transcript_path)
         transcript_dir = p.parent / p.stem / "subagents"
-        return str(transcript_dir / f"agent-{self.agent_id}.jsonl")
+        return transcript_dir / f"agent-{self.agent_id}.jsonl"
 
 class ToolState(BaseModel):
     start_time_ns: int

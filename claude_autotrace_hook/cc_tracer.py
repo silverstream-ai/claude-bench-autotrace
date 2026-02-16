@@ -52,7 +52,6 @@ def process_event(
     elif event.hook_event_name == "SubagentStart":
         manager.handle_subagent_start(SubagentStart.from_hook_event(event))
     elif event.hook_event_name == "SubagentStop":
-        logging.info("STOP EVENT!! %s", event)
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
