@@ -2,6 +2,7 @@ from datetime import datetime, UTC
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Any, Self
 from uuid import uuid4, UUID
 
@@ -118,7 +119,7 @@ class SessionStateManager:
         self._state.episode.prompt_received_ns = time.time_ns()
 
     def _check_transcript_for_new_chats(
-        self, tracer: Tracer, transcript_path: str
+        self, tracer: Tracer, transcript_path: Path
     ) -> None:
         # Parse transcript for new chat messages from the assistant, and sends spans accordingly.
         # This solution is horrible, but as of today there's no way for a hook to get data regarding assistant
@@ -172,10 +173,10 @@ class SessionStateManager:
             logger.warning("Notification received without an active episode")
             return
 
-        self._check_transcript_for_new_chats(tracer, event.transcript_path)
+        self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
 
     def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
-        self._check_transcript_for_new_chats(tracer, event.transcript_path)
+        self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
 
         episode_data = self.end_episode()
         if episode_data is None:
@@ -421,7 +422,7 @@ class SessionStateManager:
             .dump_json(self._state.chat_history)
             .decode("utf-8")
         )
-        think = extract_think_for_tool(event.transcript_path, event.tool_use_id)
+        think = extract_think_for_tool(Path(event.transcript_path), event.tool_use_id)
         attributes["think"] = truncate(think, THINK_MAX_LENGTH) if think else "N/A"
 
         if event.tool_input:

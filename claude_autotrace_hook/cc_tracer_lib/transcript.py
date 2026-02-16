@@ -79,11 +79,13 @@ def _iter_assistant_blocks(path: Path) -> list[_AssistantBlock] | None:
     return blocks
 
 
-def extract_think_for_tool(transcript_path: str, tool_use_id: str | None) -> str | None:
+def extract_think_for_tool(
+    transcript_path: Path, tool_use_id: str | None
+) -> str | None:
     if not tool_use_id:
         return None
 
-    blocks = _iter_assistant_blocks(Path(transcript_path))
+    blocks = _iter_assistant_blocks(transcript_path)
     if not blocks:
         return None
 
@@ -99,8 +101,8 @@ def extract_think_for_tool(transcript_path: str, tool_use_id: str | None) -> str
     return None
 
 
-def extract_chat_from_transcript(transcript_path: str) -> list[ChatMessage] | None:
-    blocks = _iter_assistant_blocks(Path(transcript_path))
+def extract_chat_from_transcript(transcript_path: Path) -> list[ChatMessage] | None:
+    blocks = _iter_assistant_blocks(transcript_path)
     if not blocks:
         return None
 
@@ -186,7 +188,6 @@ def search_tool_parent_in_subagent_transcript(
     has this agent as its parent.
 
     Args:
-        agent_id: The subagent's ID
         subagent_transcript_path: Path to the subagent's transcript
         agent_state: TranscriptState for this specific agent
         tool_use_id: The tool use ID we're looking for
@@ -262,7 +263,7 @@ def search_agent_parent_in_transcript(
 
 
 def search_agent_parent_in_subagent_transcript(
-    subagent_transcript_path: str, agent_state: TranscriptState, agent_id: str
+    subagent_transcript_path: Path, agent_state: TranscriptState, agent_id: str
 ) -> StepParent | None:
     """
     Scan a subagent transcript searching for the parent of an agent.
