@@ -258,9 +258,7 @@ class SubagentStop(BaseModel):
             )
 
         if event.agent_id is None:
-            raise ValueError(
-                "SubagentStop event missing required field: agent_id"
-            )
+            raise ValueError("SubagentStop event missing required field: agent_id")
 
         if event.agent_transcript_path is None:
             raise ValueError(
