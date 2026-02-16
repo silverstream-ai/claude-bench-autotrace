@@ -84,11 +84,13 @@ def main() -> None:
             logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
+    manager = SessionStateManager.from_session_id(
+        event.session_id, settings.notify_sessions
+    )
     if event.hook_event_name == "SessionStart":
         manager.save(event.session_id)
         print(
-                f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}", "systemMessage": "puzzi un sacco! WELCOME !"}}'
+            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}", "systemMessage": "puzzi un sacco! WELCOME !"}}'
         )
         logging.info("Started new session: %s", event.session_id)
         return
@@ -100,7 +102,7 @@ def main() -> None:
         harness=settings.harness,
     )
     process_event(event, tracer, manager)
-    #print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+    # print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
 if __name__ == "__main__":

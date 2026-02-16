@@ -27,7 +27,7 @@ from cc_tracer_lib.models import (
     SubagentState,
     ToolState,
     TranscriptState,
-    StepParent
+    StepParent,
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
@@ -52,7 +52,7 @@ class SessionStateManager:
         state = SessionState(
             trace_id=uuid4(),
             session_start_time=datetime.now(tz=UTC),
-            transcript_state=TranscriptState(agent_parents={}, tool_parents={})
+            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
         )
         if notify:
             send_start_notification()
@@ -213,17 +213,21 @@ class SessionStateManager:
 
     def handle_subagent_start(self, event: SubagentStart) -> None:
         if event.agent_id in self._state.subagents:
-            logger.warning("Ignoring subagent start: agent `%s` is already known.", event.agent_id)
+            logger.warning(
+                "Ignoring subagent start: agent `%s` is already known.", event.agent_id
+            )
             return
         self._state.subagents[event.agent_id] = SubagentState(
-                agent_id=event.agent_id,
-                span_id=uuid4(),
-                agent_type=event.agent_type,
-                start_time_ns=time.time_ns(),
-                transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
-                )
+            agent_id=event.agent_id,
+            span_id=uuid4(),
+            agent_type=event.agent_type,
+            start_time_ns=time.time_ns(),
+            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+        )
 
-    def _get_parent_span_id_from_step_parent(self, item_id: str, step_parent: StepParent) -> UUID | None:
+    def _get_parent_span_id_from_step_parent(
+        self, item_id: str, step_parent: StepParent
+    ) -> UUID | None:
         if step_parent.type == "agent":
             # This tool's parent is an agent
             agent_id = step_parent.agent_id
@@ -232,22 +236,33 @@ class SessionStateManager:
                 logging.debug("Parent of `%s` is unknown agent %s", item_id, agent_id)
                 return None
             parent_span = subagent_state.span_id
-            logging.debug("Parent of `%s` is agent %s (span: %s)", item_id, agent_id, parent_span)
+            logging.debug(
+                "Parent of `%s` is agent %s (span: %s)", item_id, agent_id, parent_span
+            )
             return parent_span
 
         parent_tool_state = self._state.pending_tools.get(step_parent.tool_use_id)
         if parent_tool_state is None:
-            logging.debug("Parent of `%s` is unknown tool %s", item_id, step_parent.tool_use_id)
+            logging.debug(
+                "Parent of `%s` is unknown tool %s", item_id, step_parent.tool_use_id
+            )
             return None
         parent_span = parent_tool_state.span_id
-        logging.debug("Parent of `%s` is tool %s (span: %s)", item_id, step_parent.tool_use_id, parent_span)
+        logging.debug(
+            "Parent of `%s` is tool %s (span: %s)",
+            item_id,
+            step_parent.tool_use_id,
+            parent_span,
+        )
         return parent_span
 
     def handle_subagent_stop(self, tracer: Tracer, event: SubagentStop) -> None:
         try:
-            agent =  self._state.subagents.pop(event.agent_id)
+            agent = self._state.subagents.pop(event.agent_id)
         except KeyError:
-            logger.warning("Ignoring subagent stop: agent `%s` is not known.", event.agent_id)
+            logger.warning(
+                "Ignoring subagent stop: agent `%s` is not known.", event.agent_id
+            )
             return
 
         start_time_ns = agent.start_time_ns
@@ -263,11 +278,15 @@ class SessionStateManager:
         if self._state.episode is not None:
             parent_span = self._state.episode.span_id
 
-        step_parent = self._guess_parent_for_agent(event.agent_id, event.transcript_path)
+        step_parent = self._guess_parent_for_agent(
+            event.agent_id, event.transcript_path
+        )
 
         # If we found a parent from transcript analysis, use it
         if step_parent is not None:
-            attempt = self._get_parent_span_id_from_step_parent(agent.agent_id, step_parent)
+            attempt = self._get_parent_span_id_from_step_parent(
+                agent.agent_id, step_parent
+            )
             if attempt is not None:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
@@ -284,7 +303,6 @@ class SessionStateManager:
             explicit_span_id=agent.span_id,
         )
 
-
     def handle_tool_selected(self, event: HookEvent) -> None:
         if event.tool_use_id is not None:
             tool_use_id = event.tool_use_id
@@ -293,9 +311,13 @@ class SessionStateManager:
         else:
             tool_use_id = "unknown"
 
-        self._state.pending_tools[tool_use_id] = ToolState(span_id=uuid4(), start_time_ns=time.time_ns())
+        self._state.pending_tools[tool_use_id] = ToolState(
+            span_id=uuid4(), start_time_ns=time.time_ns()
+        )
 
-    def _guess_parent_for_tool(self, tool_use_id: str, transcript_path: str) -> StepParent | None:
+    def _guess_parent_for_tool(
+        self, tool_use_id: str, transcript_path: str
+    ) -> StepParent | None:
         """
         Searches for a parent entity for the given tool.
 
@@ -334,7 +356,9 @@ class SessionStateManager:
 
         return None
 
-    def _guess_parent_for_agent(self, agent_id: str, transcript_path: str) -> StepParent | None:
+    def _guess_parent_for_agent(
+        self, agent_id: str, transcript_path: str
+    ) -> StepParent | None:
         """
         Searches for a parent entity for the given agent.
 
@@ -372,8 +396,6 @@ class SessionStateManager:
                 return result
 
         return None
-
-
 
     def handle_tool_use(self, tracer: Tracer, event: HookEvent) -> None:
         if event.tool_use_id is None:
@@ -417,7 +439,9 @@ class SessionStateManager:
 
         # If we found a parent from transcript analysis, use it
         if step_parent is not None:
-            attempt = self._get_parent_span_id_from_step_parent(tool_use_id, step_parent)
+            attempt = self._get_parent_span_id_from_step_parent(
+                tool_use_id, step_parent
+            )
             if attempt is not None:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt

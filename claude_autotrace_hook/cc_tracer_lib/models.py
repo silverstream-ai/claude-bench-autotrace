@@ -103,8 +103,10 @@ class TranscriptEntry(BaseModel):
     content: str | list[Any] | None = None
     agentId: str | None = None
 
+
 class CacheCreation(BaseModel):
     """Nested model for cache_creation in usage statistics."""
+
     model_config = ConfigDict(extra="ignore")
     ephemeral_5m_input_tokens: int | None = None
     ephemeral_1h_input_tokens: int | None = None
@@ -112,6 +114,7 @@ class CacheCreation(BaseModel):
 
 class Usage(BaseModel):
     """Model for API usage statistics from Task/agent responses."""
+
     model_config = ConfigDict(extra="ignore")
     input_tokens: int | None = None
     cache_creation_input_tokens: int | None = None
@@ -124,6 +127,7 @@ class Usage(BaseModel):
 
 class ToolResponseContentBlock(BaseModel):
     """Content block within Task/agent tool responses."""
+
     model_config = ConfigDict(extra="ignore")
     type: str
     text: str | None = None
@@ -144,6 +148,7 @@ class ToolResponse(BaseModel):
 
     All fields are optional to accommodate the variety of tool response types.
     """
+
     model_config = ConfigDict(extra="ignore")
 
     # Bash tool response fields
@@ -161,6 +166,7 @@ class ToolResponse(BaseModel):
     totalTokens: int | None = None
     totalToolUseCount: int | None = None
     usage: Usage | None = None
+
 
 class HookEvent(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -188,6 +194,7 @@ class SubagentStart(BaseModel, extra="ignore"):
     """
     Parsed SubagentStart event with only relevant fields.
     """
+
     session_id: str
     transcript_path: str
     cwd: str
@@ -225,6 +232,7 @@ class SubagentStop(BaseModel):
     """
     Parsed SubagentStop event with only relevant fields.
     """
+
     model_config = ConfigDict(extra="ignore")
 
     session_id: str
@@ -310,7 +318,8 @@ class AgentParent(BaseModel):
     """
     The parent of this step is an agent with the given ID
     """
-    type: Literal['agent'] = 'agent'
+
+    type: Literal["agent"] = "agent"
     agent_id: str
 
 
@@ -318,19 +327,23 @@ class ToolParent(BaseModel):
     """
     The parent of this step is a tool with the given ID
     """
-    type: Literal['tool'] = 'tool'
+
+    type: Literal["tool"] = "tool"
     tool_use_id: str
+
 
 StepParent = Annotated[
     AgentParent | ToolParent,
     Field(discriminator="type"),
 ]
 
+
 class TranscriptState(BaseModel):
     # Which step is the parent of which subAgent
     agent_parents: dict[str, StepParent]
     # Which step is the parent of which toolUse
     tool_parents: dict[str, StepParent]
+
 
 class SubagentState(BaseModel):
     agent_id: str
@@ -345,9 +358,11 @@ class SubagentState(BaseModel):
         transcript_dir = p.parent / p.stem / "subagents"
         return transcript_dir / f"agent-{self.agent_id}.jsonl"
 
+
 class ToolState(BaseModel):
     start_time_ns: int
     span_id: UUID
+
 
 class SessionState(BaseModel):
     trace_id: UUID
@@ -358,7 +373,7 @@ class SessionState(BaseModel):
     subagents: dict[str, SubagentState] = {}
     # https://github.com/anthropics/claude-code/issues/16424
     # There's currently no way to correlate agent ID with tool use.
-    # When pre-tool or post-tool uses are 
+    # When pre-tool or post-tool uses are
     transcript_state: TranscriptState
 
     @classmethod

@@ -14,7 +14,7 @@ from cc_tracer_lib.models import (
     TranscriptState,
     ToolParent,
     AgentParent,
-    StepParent
+    StepParent,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,10 +126,11 @@ def extract_chat_from_transcript(transcript_path: str) -> list[ChatMessage] | No
 
     return result
 
+
 def update_transcript(
     agent_state: TranscriptState,
     transcript_path: Path,
-    ) -> None:
+) -> None:
     entries = _load_transcript(Path(transcript_path))
     if entries is None:
         return
@@ -141,13 +142,20 @@ def update_transcript(
         # It has type = progress, parentToolUseID=<parent tool>, data = {agentId=<child agent id>}
         if entry.type == "progress":
             parent_tool_id = entry.parentToolUseID
-            if parent_tool_id is not None and entry.data and isinstance(entry.data, dict):
+            if (
+                parent_tool_id is not None
+                and entry.data
+                and isinstance(entry.data, dict)
+            ):
                 agent_id = entry.data.get("agentId")
                 if agent_id is not None and agent_id not in agent_state.agent_parents:
-                    agent_state.agent_parents[agent_id] = ToolParent(tool_use_id=parent_tool_id)
+                    agent_state.agent_parents[agent_id] = ToolParent(
+                        tool_use_id=parent_tool_id
+                    )
                     logger.debug(
                         "Cached agent parent: agent %s -> tool %s",
-                        agent_id, parent_tool_id
+                        agent_id,
+                        parent_tool_id,
                     )
 
         # Check for assistant messages to cache tool parent relationships
@@ -158,17 +166,18 @@ def update_transcript(
                 for content in entry.message.content:
                     if content.type == "tool_use" and content.id:
                         if content.id not in agent_state.tool_parents:
-                            agent_state.tool_parents[content.id] = AgentParent(agent_id=agent_id)
+                            agent_state.tool_parents[content.id] = AgentParent(
+                                agent_id=agent_id
+                            )
                             logger.debug(
                                 "Cached tool parent: tool %s -> agent %s",
-                                content.id, agent_id
+                                content.id,
+                                agent_id,
                             )
 
 
 def search_tool_parent_in_subagent_transcript(
-    subagent_transcript_path: Path,
-    agent_state: TranscriptState,
-    tool_use_id: str
+    subagent_transcript_path: Path, agent_state: TranscriptState, tool_use_id: str
 ) -> StepParent | None:
     """
     Scan a subagent transcript to cache all tool parent relationships.
@@ -196,7 +205,9 @@ def search_tool_parent_in_subagent_transcript(
     return agent_state.tool_parents.get(tool_use_id)
 
 
-def search_tool_parent_in_transcript(transcript_path: str, state: TranscriptState, tool_use_id: str) -> StepParent | None:
+def search_tool_parent_in_transcript(
+    transcript_path: str, state: TranscriptState, tool_use_id: str
+) -> StepParent | None:
     """
     Scan main transcript to cache all parent relationships.
 
@@ -224,7 +235,9 @@ def search_tool_parent_in_transcript(transcript_path: str, state: TranscriptStat
     return state.tool_parents.get(tool_use_id)
 
 
-def search_agent_parent_in_transcript(transcript_path: str, state: TranscriptState, agent_id: str) -> StepParent | None:
+def search_agent_parent_in_transcript(
+    transcript_path: str, state: TranscriptState, agent_id: str
+) -> StepParent | None:
     """
     Scan a transcript transcript searching for the parent of an agent.
     If a scan of the transcript is needed, all found relationships are cached.
@@ -249,9 +262,7 @@ def search_agent_parent_in_transcript(transcript_path: str, state: TranscriptSta
 
 
 def search_agent_parent_in_subagent_transcript(
-    subagent_transcript_path: str,
-    agent_state: TranscriptState,
-    agent_id: str
+    subagent_transcript_path: str, agent_state: TranscriptState, agent_id: str
 ) -> StepParent | None:
     """
     Scan a subagent transcript searching for the parent of an agent.
