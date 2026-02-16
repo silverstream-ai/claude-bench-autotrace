@@ -65,7 +65,6 @@ def process_event(
 def main() -> None:
     settings = ClaudeCodeTracingSettings()
     event_data = json.load(sys.stdin)
-    logging.debug("Received event: %s", json.dumps(event_data, indent=4))
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
