@@ -104,7 +104,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename="ss_claude_trace_hook.log", level=logging.DEBUG)
+    logging.basicConfig(filename="ss_claude_trace_hook.log", level=logging.INFO)
     try:
         main()
     except Exception:
