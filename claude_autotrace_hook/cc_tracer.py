@@ -3,12 +3,13 @@ import json
 
 import logging
 import sys
-from uuid import uuid4
 
 from cc_tracer_lib.models import (
     ENV_FILE,
     ClaudeCodeTracingSettings,
     HookEvent,
+    SubagentStart,
+    SubagentStop,
     MessageRole,
 )
 from cc_tracer_lib.spans import setup_tracer
@@ -48,6 +49,10 @@ def process_event(
         manager.handle_notification(tracer, event)
     elif event.hook_event_name == "Stop":
         manager.handle_stop(tracer, event)
+    elif event.hook_event_name == "SubagentStart":
+        manager.handle_subagent_start(SubagentStart.from_hook_event(event))
+    elif event.hook_event_name == "SubagentStop":
+        manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
         return
@@ -78,7 +83,9 @@ def main() -> None:
             logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
+    manager = SessionStateManager.from_session_id(
+        event.session_id, settings.notify_sessions
+    )
     if event.hook_event_name == "SessionStart":
         manager.save(event.session_id)
         print(
@@ -99,4 +106,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(filename="ss_claude_trace_hook.log", level=logging.INFO)
-    main()
+    try:
+        main()
+    except Exception:
+        logging.exception("Event processing failed")

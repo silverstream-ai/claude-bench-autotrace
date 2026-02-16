@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, UTC
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Any, Self
 from uuid import uuid4, UUID
 
@@ -21,12 +22,22 @@ from cc_tracer_lib.models import (
     EpisodeState,
     HookEvent,
     MessageRole,
+    SubagentStart,
+    SubagentStop,
     SessionState,
+    SubagentState,
+    ToolState,
+    TranscriptState,
+    StepParent,
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
     extract_chat_from_transcript,
     extract_think_for_tool,
+    search_tool_parent_in_transcript,
+    search_tool_parent_in_subagent_transcript,
+    search_agent_parent_in_transcript,
+    search_agent_parent_in_subagent_transcript,
     truncate,
 )
 
@@ -39,7 +50,11 @@ class SessionStateManager:
 
     @classmethod
     def start_session(cls, notify: bool) -> Self:
-        state = SessionState(trace_id=uuid4())
+        state = SessionState(
+            trace_id=uuid4(),
+            session_start_time=datetime.now(tz=UTC),
+            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+        )
         if notify:
             send_start_notification()
         return cls(state)
@@ -104,7 +119,7 @@ class SessionStateManager:
         self._state.episode.prompt_received_ns = time.time_ns()
 
     def _check_transcript_for_new_chats(
-        self, tracer: Tracer, transcript_path: str
+        self, tracer: Tracer, transcript_path: Path
     ) -> None:
         # Parse transcript for new chat messages from the assistant, and sends spans accordingly.
         # This solution is horrible, but as of today there's no way for a hook to get data regarding assistant
@@ -120,7 +135,7 @@ class SessionStateManager:
         new = self._state.check_new_assistant_messages(transcript_chat)
         episode = self._state.episode
         if episode is not None and len(new) > 0:
-            logger.info(
+            logger.debug(
                 "Found %d new chat messages in transcript, creating spans for those",
                 len(new),
             )
@@ -158,10 +173,10 @@ class SessionStateManager:
             logger.warning("Notification received without an active episode")
             return
 
-        self._check_transcript_for_new_chats(tracer, event.transcript_path)
+        self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
 
     def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
-        self._check_transcript_for_new_chats(tracer, event.transcript_path)
+        self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
 
         episode_data = self.end_episode()
         if episode_data is None:
@@ -197,6 +212,98 @@ class SessionStateManager:
 
         self._state.episode = None
 
+    def handle_subagent_start(self, event: SubagentStart) -> None:
+        if event.agent_id in self._state.subagents:
+            logger.warning(
+                "Ignoring subagent start: agent `%s` is already known.", event.agent_id
+            )
+            return
+        self._state.subagents[event.agent_id] = SubagentState(
+            agent_id=event.agent_id,
+            span_id=uuid4(),
+            agent_type=event.agent_type,
+            start_time_ns=time.time_ns(),
+            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+        )
+
+    def _get_parent_span_id_from_step_parent(
+        self, item_id: str, step_parent: StepParent
+    ) -> UUID | None:
+        if step_parent.type == "agent":
+            # This tool's parent is an agent
+            agent_id = step_parent.agent_id
+            subagent_state = self._state.subagents.get(agent_id)
+            if subagent_state is None:
+                logger.debug("Parent of `%s` is unknown agent %s", item_id, agent_id)
+                return None
+            parent_span = subagent_state.span_id
+            logger.debug(
+                "Parent of `%s` is agent %s (span: %s)", item_id, agent_id, parent_span
+            )
+            return parent_span
+
+        parent_tool_state = self._state.pending_tools.get(step_parent.tool_use_id)
+        if parent_tool_state is None:
+            logger.debug(
+                "Parent of `%s` is unknown tool %s", item_id, step_parent.tool_use_id
+            )
+            return None
+        parent_span = parent_tool_state.span_id
+        logger.debug(
+            "Parent of `%s` is tool %s (span: %s)",
+            item_id,
+            step_parent.tool_use_id,
+            parent_span,
+        )
+        return parent_span
+
+    def handle_subagent_stop(self, tracer: Tracer, event: SubagentStop) -> None:
+        try:
+            agent = self._state.subagents.pop(event.agent_id)
+        except KeyError:
+            logger.warning(
+                "Ignoring subagent stop: agent `%s` is not known.", event.agent_id
+            )
+            return
+
+        start_time_ns = agent.start_time_ns
+        end_time_ns = time.time_ns()
+
+        attributes: dict[str, Any] = {
+            AL2_TYPE: TYPE_STEP,
+            AL2_NAME: f"subagent.{agent.agent_type}",
+            AL2_EXPERIMENT: "claude-code-session",
+        }
+
+        parent_span = None
+        if self._state.episode is not None:
+            parent_span = self._state.episode.span_id
+
+        step_parent = self._guess_parent_for_agent(
+            event.agent_id, event.transcript_path
+        )
+
+        # If we found a parent from transcript analysis, use it
+        if step_parent is not None:
+            attempt = self._get_parent_span_id_from_step_parent(
+                agent.agent_id, step_parent
+            )
+            if attempt is not None:
+                # If failed, just leave the episode span as a parent (shrugs)
+                parent_span = attempt
+
+        logger.debug("Sending span to OTEL collector.")
+        send_span(
+            tracer,
+            name=f"claude_code.subagent.{agent.agent_type}",
+            attributes=attributes,
+            start_time_ns=start_time_ns,
+            end_time_ns=end_time_ns,
+            context=make_context(self._state.trace_id, parent_span),
+            trace_id=self._state.trace_id,
+            explicit_span_id=agent.span_id,
+        )
+
     def handle_tool_selected(self, event: HookEvent) -> None:
         if event.tool_use_id is not None:
             tool_use_id = event.tool_use_id
@@ -205,14 +312,103 @@ class SessionStateManager:
         else:
             tool_use_id = "unknown"
 
-        self._state.pending_tools[tool_use_id] = time.time_ns()
+        self._state.pending_tools[tool_use_id] = ToolState(
+            span_id=uuid4(), start_time_ns=time.time_ns()
+        )
+
+    def _guess_parent_for_tool(
+        self, tool_use_id: str, transcript_path: str
+    ) -> StepParent | None:
+        """
+        Searches for a parent entity for the given tool.
+
+        Strategy:
+        1. Check main transcript cache
+        2. Check all subagent transcript caches
+        3. Scan main transcript for parent relationships
+        4. Scan subagent transcripts to find which one contains this tool_use_id
+        """
+        # Check if cached in main transcript state (fast path)
+        t = self._state.transcript_state
+        if tool_use_id in t.tool_parents:
+            return t.tool_parents[tool_use_id]
+
+        # Check if cached in any subagent state (fast path)
+        for subagent in self._state.subagents.values():
+            if tool_use_id in subagent.transcript_state.tool_parents:
+                return subagent.transcript_state.tool_parents[tool_use_id]
+
+        # Not cached, need to scan transcripts
+        # First scan main transcript for agent parent relationships
+        result = search_tool_parent_in_transcript(transcript_path, t, tool_use_id)
+        if result is not None:
+            return result
+
+        # Scan subagent transcripts if their states exist
+        for subagent in self._state.subagents.values():
+            agent_state = subagent.transcript_state
+            subagent_transcript_path = subagent.get_transcript_path(transcript_path)
+
+            result = search_tool_parent_in_subagent_transcript(
+                subagent_transcript_path, agent_state, tool_use_id
+            )
+            if result is not None:
+                return result
+
+        return None
+
+    def _guess_parent_for_agent(
+        self, agent_id: str, transcript_path: str
+    ) -> StepParent | None:
+        """
+        Searches for a parent entity for the given agent.
+
+        Strategy:
+        1. Check main transcript cache
+        2. Check all subagent transcript caches
+        3. Scan main transcript for parent relationships
+        4. Scan subagent transcripts to find which one contains this agent_id
+        """
+        # Check if cached in main transcript state (fast path)
+        t = self._state.transcript_state
+        if agent_id in t.agent_parents:
+            return t.agent_parents[agent_id]
+
+        # Check if cached in any subagent state (fast path)
+        for subagent in self._state.subagents.values():
+            if agent_id in subagent.transcript_state.agent_parents:
+                return subagent.transcript_state.agent_parents[agent_id]
+
+        # Not cached, need to scan transcripts
+        # First scan main transcript for agent parent relationships
+        result = search_agent_parent_in_transcript(transcript_path, t, agent_id)
+        if result is not None:
+            return result
+
+        # Scan subagent transcripts if their states exist
+        for subagent in self._state.subagents.values():
+            agent_state = subagent.transcript_state
+            subagent_transcript_path = subagent.get_transcript_path(transcript_path)
+
+            result = search_agent_parent_in_subagent_transcript(
+                subagent_transcript_path, agent_state, agent_id
+            )
+            if result is not None:
+                return result
+
+        return None
 
     def handle_tool_use(self, tracer: Tracer, event: HookEvent) -> None:
-        tool_use_id = event.tool_use_id or event.tool_name or "unknown"
+        if event.tool_use_id is None:
+            logger.warning("Dropping invalid tool use event with no tool ID.")
+            return
+        tool_use_id = event.tool_use_id
 
-        start_time_ns = (
-            self._state.pending_tools.pop(tool_use_id, None) or time.time_ns()
-        )
+        tool_state = self._state.pending_tools.pop(tool_use_id, None)
+        if tool_state is None:
+            logger.warning("Ignoring tool stop: tool `%s` is not known.", tool_use_id)
+            return
+        start_time_ns = tool_state.start_time_ns
         end_time_ns = time.time_ns()
 
         attributes: dict[str, Any] = {
@@ -226,7 +422,7 @@ class SessionStateManager:
             .dump_json(self._state.chat_history)
             .decode("utf-8")
         )
-        think = extract_think_for_tool(event.transcript_path, event.tool_use_id)
+        think = extract_think_for_tool(Path(event.transcript_path), event.tool_use_id)
         attributes["think"] = truncate(think, THINK_MAX_LENGTH) if think else "N/A"
 
         if event.tool_input:
@@ -236,18 +432,31 @@ class SessionStateManager:
             }
             attributes["agent_output"] = json.dumps(agent_output)
 
-        logging.info("Sending span to OTEL collector.")
-        episode_span_id = (
-            self._state.episode.span_id if self._state.episode is not None else None
-        )
+        parent_span = None
+        if self._state.episode is not None:
+            parent_span = self._state.episode.span_id
+
+        step_parent = self._guess_parent_for_tool(tool_use_id, event.transcript_path)
+
+        # If we found a parent from transcript analysis, use it
+        if step_parent is not None:
+            attempt = self._get_parent_span_id_from_step_parent(
+                tool_use_id, step_parent
+            )
+            if attempt is not None:
+                # If failed, just leave the episode span as a parent (shrugs)
+                parent_span = attempt
+
+        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.tool.{event.tool_name}",
             attributes=attributes,
             start_time_ns=start_time_ns,
             end_time_ns=end_time_ns,
-            context=make_context(self._state.trace_id, episode_span_id),
+            context=make_context(self._state.trace_id, parent_span),
             trace_id=self._state.trace_id,
+            explicit_span_id=tool_state.span_id,
         )
 
     def handle_session_end(self, tracer: Tracer, event: HookEvent) -> None:
