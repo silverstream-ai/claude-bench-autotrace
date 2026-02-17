@@ -19,6 +19,7 @@ AL2_EXPERIMENT = "al2.experiment"
 AL2_MODEL = "al2.model"
 AL2_HARNESS = "al2.harness"
 TYPE_EXPERIMENT = "experiment"
+TYPE_TRACE = "session"
 TYPE_EPISODE = "episode"
 TYPE_STEP = "step"
 
@@ -306,13 +307,15 @@ class ChatMessage(BaseModel):
     timestamp: float
 
 
+class PromptState(BaseModel):
+    text: str
+    received_ns: int
+    metadata_id: str
+
 class EpisodeState(BaseModel):
     span_id: UUID
     start_ns: int
-    prompt_text: str | None = None
-    prompt_received_ns: int | None = None
-    prompt_metadata_id: str | None = None
-
+    prompt: PromptState | None
 
 class AgentParent(BaseModel):
     """
@@ -367,14 +370,18 @@ class ToolState(BaseModel):
 class SessionState(BaseModel):
     trace_id: UUID
     session_start_time: datetime
-    chat_history: list[ChatMessage] = []
-    episode: EpisodeState | None = None
-    pending_tools: dict[str, ToolState] = {}
-    subagents: dict[str, SubagentState] = {}
+    chat_history: list[ChatMessage]
+    # Single back-and-forth in the main worker
+    episode: EpisodeState | None
+    pending_tools: dict[str, ToolState]
+    subagents: dict[str, SubagentState]
     # https://github.com/anthropics/claude-code/issues/16424
     # There's currently no way to correlate agent ID with tool use.
     # So we cache known parent/child relationships here.
     transcript_state: TranscriptState
+    start_time_ns: int
+    span_id: UUID
+    prompt: PromptState | None
 
     @classmethod
     def from_session_id(cls, session_id: str) -> Self | None:

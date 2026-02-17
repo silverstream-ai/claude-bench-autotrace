@@ -35,7 +35,7 @@ def uuid_to_int(uuid: UUID, bits: int) -> int:
     return int(hex_str, 16)
 
 
-def make_context(trace_id: UUID, parent_span_id: UUID | None = None) -> Context:
+def make_context(trace_id: UUID, parent_span_id: UUID | None) -> Context:
     span_context = SpanContext(
         trace_id=uuid_to_int(trace_id, 128),
         span_id=uuid_to_int(parent_span_id, 64) if parent_span_id is not None else 0,
