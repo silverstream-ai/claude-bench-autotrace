@@ -93,7 +93,6 @@ def send_span(
         span.set_attribute(key, value if _is_otel_serializable(value) else str(value))
     span.set_status(Status(StatusCode.OK))
 
-    # WTF is this?
     span._context = SpanContext(  # type: ignore[attr-defined]
         trace_id=uuid_to_int(trace_id, 128),
         span_id=uuid_to_int(explicit_span_id, 64)

@@ -85,12 +85,12 @@ class SessionStateManager:
         if self._state.episode is not None:
             return
 
-        logger.info("Starting episode, trace id: %s", self._state.trace_id)
         self._state.episode = EpisodeState(
             span_id=uuid4(),
             start_ns=time.time_ns(),
             prompt = None,
         )
+        logger.info("Starting episode, trace id: %s, span id: %s", self._state.trace_id, self._state.episode.span_id)
 
     def update_episode_prompt(self, prompt: str) -> None:
         if not self.has_prompt():
