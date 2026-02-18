@@ -99,6 +99,10 @@ class SessionStateManager:
         if self._state.episode is None:
             logger.warning("Updating prompt without active episode")
             return
+        if self._state.chat_history:
+            last = self._state.chat_history[-1]
+            if last.role == role and last.message == chat_msg:
+                return
         self._state.chat_history.append(
             ChatMessage(
                 message=chat_msg,
