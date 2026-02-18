@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import fcntl
 import json
 
 import logging
@@ -6,6 +7,7 @@ import sys
 
 from cc_tracer_lib.models import (
     ENV_FILE,
+    STATE_DIR,
     ClaudeCodeTracingSettings,
     HookEvent,
     SubagentStart,
@@ -83,24 +85,34 @@ def main() -> None:
             logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(
-        event.session_id, settings.notify_sessions
-    )
-    if event.hook_event_name == "SessionStart":
-        manager.save(event.session_id)
-        print(
-            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
-        )
-        logging.info("Started new session: %s", event.session_id)
-        return
-
     tracer = setup_tracer(
         collector_base_url=settings.collector_base_url,
         endpoint_code=settings.endpoint_code,
         model=settings.model,
         harness=settings.harness,
     )
-    process_event(event, tracer, manager)
+
+    # Serialize access to the session state file. Hook events can fire concurrently
+    # as separate processes; without a lock, two processes can load the same state,
+    # both consider the same chat message "new", and emit duplicate spans.
+    STATE_DIR.mkdir(exist_ok=True)
+    lock_path = STATE_DIR / f"{event.session_id}.lock"
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+
+        manager = SessionStateManager.from_session_id(
+            event.session_id, settings.notify_sessions
+        )
+        if event.hook_event_name == "SessionStart":
+            manager.save(event.session_id)
+            print(
+                f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
+            )
+            logging.info("Started new session: %s", event.session_id)
+            return
+
+        process_event(event, tracer, manager)
+
     print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
