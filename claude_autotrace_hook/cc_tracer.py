@@ -83,9 +83,6 @@ def main() -> None:
         harness=settings.harness,
     )
     process_event(event, tracer, manager)
-    print(
-        f'{{"status":"info","systemMessage":"Debug this run on bench: {settings.collector_base_url}/deep-dive/trace/{manager.get_trace_id()}"}}'
-    )
     print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
