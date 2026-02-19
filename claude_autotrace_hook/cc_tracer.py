@@ -39,7 +39,6 @@ def process_event(
     elif event.hook_event_name == "SubagentStop":
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionStart":
-        manager.save(event.session_id)
         print(
             f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
         )
