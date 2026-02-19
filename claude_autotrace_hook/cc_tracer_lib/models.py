@@ -380,7 +380,7 @@ class SessionState(BaseModel):
     # So we cache known parent/child relationships here.
     transcript_state: TranscriptState
     start_time_ns: int
-    span_id: UUID
+    session_span_id: UUID
     prompt: PromptState | None
 
     @classmethod

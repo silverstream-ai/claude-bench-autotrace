@@ -62,7 +62,7 @@ class SessionStateManager:
             prompt=None,
             pending_tools={},
             subagents={},
-            span_id=uuid4(),
+            session_span_id=uuid4(),
         )
         if notify:
             send_start_notification()
@@ -228,7 +228,7 @@ class SessionStateManager:
             attributes=attributes,
             start_time_ns=episode_data.start_ns,
             end_time_ns=time.time_ns(),
-            context=make_context(self._state.trace_id, self._state.span_id),
+            context=make_context(self._state.trace_id, self._state.session_span_id),
             trace_id=self._state.trace_id,
             explicit_span_id=episode_data.span_id,
         )
@@ -301,7 +301,7 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
 
-        parent_span = None
+        parent_span = self._state.session_span_id
         if self._state.episode is not None:
             parent_span = self._state.episode.span_id
 
@@ -459,7 +459,7 @@ class SessionStateManager:
             }
             attributes["agent_output"] = json.dumps(agent_output)
 
-        parent_span = None
+        parent_span = self._state.session_span_id
         if self._state.episode is not None:
             parent_span = self._state.episode.span_id
 
@@ -504,6 +504,6 @@ class SessionStateManager:
             end_time_ns=time.time_ns(),
             context=make_context(self._state.trace_id, None),
             trace_id=self._state.trace_id,
-            explicit_span_id=self._state.span_id,
+            explicit_span_id=self._state.session_span_id,
         )
 
