@@ -18,8 +18,10 @@ from cc_tracer_lib.models import (
     THINK_MAX_LENGTH,
     TYPE_EPISODE,
     TYPE_STEP,
+    TYPE_TRACE,
     ChatMessage,
     EpisodeState,
+    PromptState,
     HookEvent,
     MessageRole,
     SubagentStart,
@@ -54,6 +56,13 @@ class SessionStateManager:
             trace_id=uuid4(),
             session_start_time=datetime.now(tz=UTC),
             transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+            chat_history=[],
+            episode=None,
+            start_time_ns=time.time_ns(),
+            prompt=None,
+            pending_tools={},
+            subagents={},
+            session_span_id=uuid4(),
         )
         if notify:
             send_start_notification()
@@ -72,21 +81,28 @@ class SessionStateManager:
     def delete(self, session_id: str) -> None:
         SessionState.delete(session_id)
 
-    def is_episode_active(self) -> bool:
-        return self._state.episode is not None
+    def ensure_episode_started(self) -> None:
+        if self._state.episode is not None:
+            return
 
-    def start_episode(self, prompt: str) -> None:
-        if self.is_episode_active():
-            logger.warning("Starting new episode while one is already active")
-
-        logger.info("Starting episode, trace id: %s", self._state.trace_id)
         self._state.episode = EpisodeState(
             span_id=uuid4(),
             start_ns=time.time_ns(),
-            prompt_metadata_id=str(uuid4()),
-            prompt_received_ns=time.time_ns(),
-            prompt_text=prompt,
+            prompt = None,
         )
+        logger.info("Starting episode, trace id: %s, span id: %s", self._state.trace_id, self._state.episode.span_id)
+
+    def update_episode_prompt(self, prompt: str) -> None:
+        if not self.has_prompt():
+            self.update_prompt(prompt)
+        if self._state.episode is None:
+            logger.warning("[BUG] update_episode_prompt() called without an active episode")
+            return
+        self._state.episode.prompt = PromptState(
+                text=prompt,
+                metadata_id=str(uuid4()),
+                received_ns=time.time_ns(),
+                )
 
     def end_episode(self) -> EpisodeState | None:
         if self._state.episode is None:
@@ -110,13 +126,15 @@ class SessionStateManager:
     def get_trace_id(self) -> UUID:
         return self._state.trace_id
 
+    def has_prompt(self) -> bool:
+        return self._state.prompt is not None
+
     def update_prompt(self, prompt: str) -> None:
-        if self._state.episode is None:
-            logger.warning("Updating prompt without active episode")
-            return
-        self._state.episode.prompt_text = prompt
-        self._state.episode.prompt_metadata_id = str(uuid4())
-        self._state.episode.prompt_received_ns = time.time_ns()
+        self._state.prompt = PromptState(
+                text = prompt,
+                metadata_id = str(uuid4()),
+                received_ns = time.time_ns(),
+        )
 
     def _check_transcript_for_new_chats(
         self, tracer: Tracer, transcript_path: Path
@@ -175,6 +193,11 @@ class SessionStateManager:
 
         self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
 
+    def handle_prompt_submit(self, prompt: str) -> None:
+        self.ensure_episode_started()
+        self.update_episode_prompt(prompt)
+        self.add_chat_message(prompt, MessageRole.USER)
+
     def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
         self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
 
@@ -183,8 +206,8 @@ class SessionStateManager:
             return
 
         task_name = (
-            truncate(episode_data.prompt_text, 50).replace("\n", " ")
-            if episode_data.prompt_text is not None
+            truncate(episode_data.prompt.text, 50).replace("\n", " ")
+            if episode_data.prompt is not None
             else "turn"
         )
 
@@ -205,7 +228,7 @@ class SessionStateManager:
             attributes=attributes,
             start_time_ns=episode_data.start_ns,
             end_time_ns=time.time_ns(),
-            context=make_context(self._state.trace_id),
+            context=make_context(self._state.trace_id, self._state.session_span_id),
             trace_id=self._state.trace_id,
             explicit_span_id=episode_data.span_id,
         )
@@ -213,11 +236,14 @@ class SessionStateManager:
         self._state.episode = None
 
     def handle_subagent_start(self, event: SubagentStart) -> None:
+        self.ensure_episode_started()
+
         if event.agent_id in self._state.subagents:
             logger.warning(
                 "Ignoring subagent start: agent `%s` is already known.", event.agent_id
             )
             return
+
         self._state.subagents[event.agent_id] = SubagentState(
             agent_id=event.agent_id,
             span_id=uuid4(),
@@ -275,7 +301,7 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
 
-        parent_span = None
+        parent_span = self._state.session_span_id
         if self._state.episode is not None:
             parent_span = self._state.episode.span_id
 
@@ -305,6 +331,7 @@ class SessionStateManager:
         )
 
     def handle_tool_selected(self, event: HookEvent) -> None:
+        self.ensure_episode_started()
         if event.tool_use_id is not None:
             tool_use_id = event.tool_use_id
         elif event.tool_name is not None:
@@ -432,7 +459,7 @@ class SessionStateManager:
             }
             attributes["agent_output"] = json.dumps(agent_output)
 
-        parent_span = None
+        parent_span = self._state.session_span_id
         if self._state.episode is not None:
             parent_span = self._state.episode.span_id
 
@@ -460,6 +487,23 @@ class SessionStateManager:
         )
 
     def handle_session_end(self, tracer: Tracer, event: HookEvent) -> None:
-        if self.is_episode_active():
+        if self._state.episode is not None:
             self.handle_stop(tracer, event)
         self.delete(event.session_id)
+        attributes: dict[str, Any] = {
+            AL2_TYPE: TYPE_TRACE,
+            AL2_NAME: "session",
+            AL2_EXPERIMENT: "claude-code-session",
+        }
+
+        send_span(
+            tracer,
+            name=f"claude_code.session",
+            attributes=attributes,
+            start_time_ns=self._state.start_time_ns,
+            end_time_ns=time.time_ns(),
+            context=make_context(self._state.trace_id, None),
+            trace_id=self._state.trace_id,
+            explicit_span_id=self._state.session_span_id,
+        )
+
