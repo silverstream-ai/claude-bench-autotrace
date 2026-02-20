@@ -216,6 +216,7 @@ class SessionStateManager:
             AL2_NAME: task_name,
             AL2_EXPERIMENT: "claude-code-session",
         }
+        attributes["prompt"] = episode_data.prompt.text if episode_data.prompt is not None else None
         attributes["chat_messages_json"] = (
             TypeAdapter(list[ChatMessage])
             .dump_json(self._state.chat_history)
@@ -300,6 +301,7 @@ class SessionStateManager:
             AL2_NAME: f"subagent.{agent.agent_type}",
             AL2_EXPERIMENT: "claude-code-session",
         }
+        attributes["agent_id"] = event.agent_id
 
         parent_span = self._state.session_span_id
         if self._state.episode is not None:
