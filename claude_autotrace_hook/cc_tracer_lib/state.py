@@ -289,7 +289,6 @@ class SessionStateManager:
             start_time_ns=time.time_ns(),
             transcript_state=TranscriptState(agent_parents={}, tool_parents={}, chat_messages=[]),
             chat_history=[],
-            prompt=None,
         )
 
     def _get_parent_span_id_from_step_parent(self, item_id: str, step_parent: StepParent) -> UUID | None:
@@ -337,12 +336,6 @@ class SessionStateManager:
             (m for m in agent.chat_history if m.role is MessageRole.USER),
             None,
         )
-        if first_user_chat is not None:
-            agent.prompt = PromptState(
-                text=first_user_chat.message,
-                metadata_id=str(uuid4()),
-                received_ns=int(first_user_chat.timestamp * 1e9),
-            )
 
         start_time_ns = agent.start_time_ns
         end_time_ns = time.time_ns()
@@ -353,8 +346,8 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
         attributes["agent_id"] = event.agent_id
-        if agent.prompt is not None:
-            attributes["prompt"] = agent.prompt.text
+        if first_user_chat is not None:
+            attributes["prompt"] = first_user_chat.message
 
         parent_span = self._state.session_span_id
         if self._state.episode is not None:

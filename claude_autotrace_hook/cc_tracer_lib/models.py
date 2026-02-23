@@ -348,7 +348,6 @@ class SubagentState(BaseModel):
     span_id: UUID
     transcript_state: TranscriptState
     chat_history: list[ChatMessage]
-    prompt: PromptState | None
 
     def get_transcript_path(self, main_transcript_path: str) -> Path:
         """Get the path to this subagent's transcript file."""
