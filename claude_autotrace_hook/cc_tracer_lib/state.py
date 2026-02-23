@@ -186,6 +186,7 @@ class SessionStateManager:
         chat_history: list[ChatMessage],
         parent_span_id: UUID,
         allowed_roles: set[MessageRole],
+        span_roles: set[MessageRole],
     ) -> None:
         transcript_chat = transcript_state.chat_messages
         logger.debug("Extracted %d chat messages from transcript.", len(transcript_chat))
@@ -207,17 +208,19 @@ class SessionStateManager:
         new_chat.sort(key=lambda m: m.timestamp)
 
         if len(new_chat) > 0:
+            new_chat_spans = [m for m in new_chat if m.role in span_roles]
             logger.debug(
                 "Found %d new chat messages in transcript, creating spans for those",
-                len(new_chat),
+                len(new_chat_spans),
             )
             for n in new_chat:
-                self._send_chat_span(
-                    tracer,
-                    n,
-                    chat_history,
-                    parent_span_id,
-                )
+                if n.role in span_roles:
+                    self._send_chat_span(
+                        tracer,
+                        n,
+                        chat_history,
+                        parent_span_id,
+                    )
                 self._insert_chat_message_sorted(chat_history, n)
 
     def handle_notification(self, tracer: Tracer, event: HookEvent) -> None:
@@ -231,6 +234,7 @@ class SessionStateManager:
             self._state.transcript_state,
             self._state.chat_history,
             self._state.episode.span_id,
+            {MessageRole.ASSISTANT},
             {MessageRole.ASSISTANT},
         )
 
@@ -251,6 +255,7 @@ class SessionStateManager:
             self._state.transcript_state,
             self._state.chat_history,
             parent_span_id,
+            {MessageRole.ASSISTANT},
             {MessageRole.ASSISTANT},
         )
 
@@ -357,6 +362,7 @@ class SessionStateManager:
             agent.chat_history,
             agent.span_id,
             {MessageRole.USER, MessageRole.ASSISTANT},
+            {MessageRole.ASSISTANT},
         )
         first_user_chat = next(
             (m for m in agent.chat_history if m.role is MessageRole.USER),
