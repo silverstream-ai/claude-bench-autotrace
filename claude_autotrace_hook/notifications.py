@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from notifypy import Notify  # type: ignore[import-not-found]
+from notifypy import Notify  # type: ignore[import-untyped]
 
 
 def _best_icon_size(available: set[int], base: int) -> int:
