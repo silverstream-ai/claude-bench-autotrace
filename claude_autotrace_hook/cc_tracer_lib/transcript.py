@@ -89,7 +89,7 @@ def update_transcript(
     if entries is None:
         return
 
-    # Single pass through entries to cache parent relationships and assistant chat messages
+    # Single pass through entries to cache parent relationships and transcript chat messages
     logger.debug("%d entries in %s", len(entries), transcript_path)
     chat_messages: list[ChatMessage] = []
     for entry in entries:
@@ -156,6 +156,53 @@ def update_transcript(
                         timestamp=entry.timestamp.timestamp(),
                     )
                 )
+        elif entry.type == "user":
+            if entry.timestamp is None:
+                logging.warning(
+                    "Bad transcript entry %s: timestamp is missing for user type",
+                    entry.model_dump_json(),
+                )
+                continue
+
+            user_text: str | None = None
+            if isinstance(entry.message, str):
+                user_text = entry.message
+            elif isinstance(entry.message, dict):
+                maybe_content = entry.message.get("content")
+                if isinstance(maybe_content, str):
+                    user_text = maybe_content
+                elif isinstance(maybe_content, list):
+                    for block in maybe_content:
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") != "text":
+                            continue
+                        block_text = block.get("text")
+                        if not isinstance(block_text, str):
+                            continue
+                        chat_messages.append(
+                            ChatMessage(
+                                message=block_text,
+                                role=MessageRole.USER,
+                                timestamp=entry.timestamp.timestamp(),
+                            )
+                        )
+                    continue
+
+            if user_text is None:
+                logging.warning(
+                    "Bad transcript entry %s: unsupported user message payload",
+                    entry.model_dump_json(),
+                )
+                continue
+
+            chat_messages.append(
+                ChatMessage(
+                    message=user_text,
+                    role=MessageRole.USER,
+                    timestamp=entry.timestamp.timestamp(),
+                )
+            )
 
     agent_state.chat_messages = chat_messages
 

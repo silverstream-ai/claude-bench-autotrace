@@ -185,6 +185,7 @@ class SessionStateManager:
         transcript_state: TranscriptState,
         chat_history: list[ChatMessage],
         parent_span_id: UUID,
+        allowed_roles: set[MessageRole],
     ) -> None:
         transcript_chat = transcript_state.chat_messages
         logger.debug("Extracted %d chat messages from transcript.", len(transcript_chat))
@@ -192,10 +193,12 @@ class SessionStateManager:
         seen = {
             (m.message, m.timestamp)
             for m in chat_history
-            if m.role is MessageRole.ASSISTANT
+            if m.role in allowed_roles
         }
         new_chat: list[ChatMessage] = []
         for m in transcript_chat:
+            if m.role not in allowed_roles:
+                continue
             k = (m.message, m.timestamp)
             if k in seen:
                 continue
@@ -228,6 +231,7 @@ class SessionStateManager:
             self._state.transcript_state,
             self._state.chat_history,
             self._state.episode.span_id,
+            {MessageRole.ASSISTANT},
         )
 
     def handle_prompt_submit(self, prompt: str) -> None:
@@ -247,6 +251,7 @@ class SessionStateManager:
             self._state.transcript_state,
             self._state.chat_history,
             parent_span_id,
+            {MessageRole.ASSISTANT},
         )
 
         episode_data = self.end_episode()
@@ -351,6 +356,7 @@ class SessionStateManager:
             agent.transcript_state,
             agent.chat_history,
             agent.span_id,
+            {MessageRole.USER, MessageRole.ASSISTANT},
         )
 
         start_time_ns = agent.start_time_ns
