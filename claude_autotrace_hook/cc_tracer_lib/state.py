@@ -174,13 +174,14 @@ class SessionStateManager:
                     .dump_json(self._state.chat_history)
                     .decode("utf-8")
                 )
+                timestamp_ns = int(n.timestamp * 1.e09)
 
                 send_span(
                     tracer,
                     name="claude_code.chat",
                     attributes=attributes,
-                    start_time_ns=time.time_ns() - 10,
-                    end_time_ns=time.time_ns(),
+                    start_time_ns=timestamp_ns,
+                    end_time_ns=timestamp_ns + 1,
                     context=make_context(self._state.trace_id, episode.span_id),
                     trace_id=self._state.trace_id,
                 )
