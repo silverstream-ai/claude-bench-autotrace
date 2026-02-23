@@ -346,6 +346,8 @@ class TranscriptState(BaseModel):
     agent_parents: dict[str, StepParent]
     # Which step is the parent of which toolUse
     tool_parents: dict[str, StepParent]
+    # Assistant chat messages parsed from transcript
+    chat_messages: list[ChatMessage]
 
 
 class SubagentState(BaseModel):

@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-from datetime import datetime
 import logging
 from pathlib import Path
 
@@ -8,7 +6,6 @@ from pydantic import ValidationError
 from cc_tracer_lib.models import (
     AssistantMessage,
     ChatMessage,
-    ContentBlock,
     MessageRole,
     TranscriptEntry,
     TranscriptState,
@@ -49,84 +46,39 @@ def _load_transcript(path: Path) -> list[TranscriptEntry] | None:
     return entries_data
 
 
-@dataclass
-class _AssistantBlock:
-    message: ContentBlock
-    timestamp: datetime
-
-
-def _iter_assistant_blocks(path: Path) -> list[_AssistantBlock] | None:
-    entries = _load_transcript(path)
-    if entries is None:
-        return None
-
-    blocks: list[_AssistantBlock] = []
-    for entry in entries:
-        if entry.type == "assistant" and isinstance(entry.message, AssistantMessage):
-            if entry.timestamp is None:
-                # TODO(#3264): This isn't needed if we catch errors at parse time
-                logging.warning(
-                    "Bad transcript entry %s: timestamp is missing for assistant type",
-                    entry.model_dump_json(),
-                )
-                continue
-            blocks.extend(
-                [
-                    _AssistantBlock(message=c, timestamp=entry.timestamp)
-                    for c in entry.message.content
-                ]
-            )
-    return blocks
-
-
 def extract_think_for_tool(
     transcript_path: Path, tool_use_id: str | None
 ) -> str | None:
     if not tool_use_id:
         return None
 
-    blocks = _iter_assistant_blocks(transcript_path)
-    if not blocks:
+    entries = _load_transcript(transcript_path)
+    if not entries:
         return None
 
     pending_think: str | None = None
-    for block in blocks:
-        match block.message.type:
-            case "thinking":
-                pending_think = block.message.thinking
-            case "tool_use":
-                if block.message.id == tool_use_id:
-                    return pending_think
-                pending_think = None
-    return None
-
-
-def extract_chat_from_transcript(transcript_path: Path) -> list[ChatMessage] | None:
-    blocks = _iter_assistant_blocks(transcript_path)
-    if not blocks:
-        return None
-
-    result = []
-    for block in blocks:
-        if block.message.type == "text":
-            # This is a chat message from assistant
-            if block.message.text is None:
-                # TODO(#3264): This isn't needed if we catch errors at parse time
-                logging.warning(
-                    "Bad transcript block %s: text is missing for assistant type",
-                    block.message.model_dump_json(),
-                )
-                continue
-
-            result.append(
-                ChatMessage(
-                    message=block.message.text,
-                    role=MessageRole.ASSISTANT,
-                    timestamp=block.timestamp.timestamp(),
-                )
+    for entry in entries:
+        if entry.type != "assistant" or not isinstance(entry.message, AssistantMessage):
+            continue
+        if entry.timestamp is None:
+            # Preserve prior behavior from _iter_assistant_blocks(), which skipped
+            # malformed assistant entries (including for think extraction).
+            logging.warning(
+                "Bad transcript entry %s: timestamp is missing for assistant type",
+                entry.model_dump_json(),
             )
+            continue
 
-    return result
+        for content in entry.message.content:
+            match content.type:
+                case "thinking":
+                    pending_think = content.thinking
+                case "tool_use":
+                    if content.id == tool_use_id:
+                        return pending_think
+                    pending_think = None
+
+    return None
 
 
 def update_transcript(
@@ -137,8 +89,9 @@ def update_transcript(
     if entries is None:
         return
 
-    # Single pass through entries to cache parent relationships
+    # Single pass through entries to cache parent relationships and assistant chat messages
     logger.debug("%d entries in %s", len(entries), transcript_path)
+    chat_messages: list[ChatMessage] = []
     for entry in entries:
         # Check for progress entry indicating agent spawned by tool
         # It has type = progress, parentToolUseID=<parent tool>, data = {agentId=<child agent id>}
@@ -164,6 +117,7 @@ def update_transcript(
         # It has agentId = <parent agentid>, message= {content: [... {type: tool_use, id: <child tool_use id>}]}
         elif entry.type == "assistant" and isinstance(entry.message, AssistantMessage):
             agent_id = entry.agentId
+
             if agent_id is not None:
                 for content in entry.message.content:
                     if content.type == "tool_use" and content.id:
@@ -176,6 +130,34 @@ def update_transcript(
                                 content.id,
                                 agent_id,
                             )
+
+            if entry.timestamp is None:
+                # TODO(#3264): This isn't needed if we catch errors at parse time
+                logging.warning(
+                    "Bad transcript entry %s: timestamp is missing for assistant type",
+                    entry.model_dump_json(),
+                )
+                continue
+
+            for content in entry.message.content:
+                if content.type != "text":
+                    continue
+                if content.text is None:
+                    # TODO(#3264): This isn't needed if we catch errors at parse time
+                    logging.warning(
+                        "Bad transcript block %s: text is missing for assistant type",
+                        content.model_dump_json(),
+                    )
+                    continue
+                chat_messages.append(
+                    ChatMessage(
+                        message=content.text,
+                        role=MessageRole.ASSISTANT,
+                        timestamp=entry.timestamp.timestamp(),
+                    )
+                )
+
+    agent_state.chat_messages = chat_messages
 
 
 def search_tool_parent_in_subagent_transcript(

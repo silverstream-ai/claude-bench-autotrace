@@ -34,8 +34,8 @@ from cc_tracer_lib.models import (
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
-    extract_chat_from_transcript,
     extract_think_for_tool,
+    update_transcript,
     search_tool_parent_in_transcript,
     search_tool_parent_in_subagent_transcript,
     search_agent_parent_in_transcript,
@@ -55,7 +55,9 @@ class SessionStateManager:
         state = SessionState(
             trace_id=uuid4(),
             session_start_time=datetime.now(tz=UTC),
-            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+            transcript_state=TranscriptState(
+                agent_parents={}, tool_parents={}, chat_messages=[]
+            ),
             chat_history=[],
             episode=None,
             start_time_ns=time.time_ns(),
@@ -142,10 +144,8 @@ class SessionStateManager:
         # Parse transcript for new chat messages from the assistant, and sends spans accordingly.
         # This solution is horrible, but as of today there's no way for a hook to get data regarding assistant
         # responses/messages :(
-        transcript_chat = extract_chat_from_transcript(transcript_path)
-        if transcript_chat is None:
-            logger.warning("Failed to extract chat from transcript")
-            return
+        update_transcript(self._state.transcript_state, transcript_path)
+        transcript_chat = self._state.transcript_state.chat_messages
 
         logger.debug(
             "Extracted %d chat messages from transcript.", len(transcript_chat)
@@ -251,7 +251,9 @@ class SessionStateManager:
             span_id=uuid4(),
             agent_type=event.agent_type,
             start_time_ns=time.time_ns(),
-            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+            transcript_state=TranscriptState(
+                agent_parents={}, tool_parents={}, chat_messages=[]
+            ),
         )
 
     def _get_parent_span_id_from_step_parent(
@@ -509,4 +511,3 @@ class SessionStateManager:
             trace_id=self._state.trace_id,
             explicit_span_id=self._state.session_span_id,
         )
-
