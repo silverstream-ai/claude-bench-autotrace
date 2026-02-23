@@ -4,14 +4,14 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from cc_tracer_lib.models import (
+    AgentParent,
     AssistantMessage,
     ChatMessage,
     MessageRole,
+    StepParent,
+    ToolParent,
     TranscriptEntry,
     TranscriptState,
-    ToolParent,
-    AgentParent,
-    StepParent,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,9 +46,7 @@ def _load_transcript(path: Path) -> list[TranscriptEntry] | None:
     return entries_data
 
 
-def extract_think_for_tool(
-    transcript_path: Path, tool_use_id: str | None
-) -> str | None:
+def extract_think_for_tool(transcript_path: Path, tool_use_id: str | None) -> str | None:
     if not tool_use_id:
         return None
 
@@ -81,7 +79,7 @@ def extract_think_for_tool(
     return None
 
 
-def update_transcript(
+def update_transcript(  # noqa: C901, PLR0912, PLR0915
     agent_state: TranscriptState,
     transcript_path: Path,
 ) -> None:
@@ -97,16 +95,10 @@ def update_transcript(
         # It has type = progress, parentToolUseID=<parent tool>, data = {agentId=<child agent id>}
         if entry.type == "progress":
             parent_tool_id = entry.parentToolUseID
-            if (
-                parent_tool_id is not None
-                and entry.data
-                and isinstance(entry.data, dict)
-            ):
+            if parent_tool_id is not None and entry.data and isinstance(entry.data, dict):
                 agent_id = entry.data.get("agentId")
                 if agent_id is not None and agent_id not in agent_state.agent_parents:
-                    agent_state.agent_parents[agent_id] = ToolParent(
-                        tool_use_id=parent_tool_id
-                    )
+                    agent_state.agent_parents[agent_id] = ToolParent(tool_use_id=parent_tool_id)
                     logger.debug(
                         "Cached agent parent: agent %s -> tool %s",
                         agent_id,
@@ -120,16 +112,13 @@ def update_transcript(
 
             if agent_id is not None:
                 for content in entry.message.content:
-                    if content.type == "tool_use" and content.id:
-                        if content.id not in agent_state.tool_parents:
-                            agent_state.tool_parents[content.id] = AgentParent(
-                                agent_id=agent_id
-                            )
-                            logger.debug(
-                                "Cached tool parent: tool %s -> agent %s",
-                                content.id,
-                                agent_id,
-                            )
+                    if content.type == "tool_use" and content.id and content.id not in agent_state.tool_parents:
+                        agent_state.tool_parents[content.id] = AgentParent(agent_id=agent_id)
+                        logger.debug(
+                            "Cached tool parent: tool %s -> agent %s",
+                            content.id,
+                            agent_id,
+                        )
 
             if entry.timestamp is None:
                 # TODO(#3264): This isn't needed if we catch errors at parse time
@@ -265,9 +254,7 @@ def search_tool_parent_in_transcript(
     return state.tool_parents.get(tool_use_id)
 
 
-def search_agent_parent_in_transcript(
-    transcript_path: str, state: TranscriptState, agent_id: str
-) -> StepParent | None:
+def search_agent_parent_in_transcript(transcript_path: str, state: TranscriptState, agent_id: str) -> StepParent | None:
     """
     Scan a transcript searching for the parent of an agent.
     If a scan of the transcript is needed, all found relationships are cached.
