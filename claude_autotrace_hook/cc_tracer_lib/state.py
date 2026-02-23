@@ -1,15 +1,13 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 import json
 import logging
-import time
 from pathlib import Path
+import time
 from typing import Any, Self
-from uuid import uuid4, UUID
+from uuid import UUID, uuid4
 
 from opentelemetry.trace import Tracer
 from pydantic import TypeAdapter
-
-from notifications import send_start_notification
 
 from cc_tracer_lib.models import (
     AL2_EXPERIMENT,
@@ -21,27 +19,28 @@ from cc_tracer_lib.models import (
     TYPE_TRACE,
     ChatMessage,
     EpisodeState,
-    PromptState,
     HookEvent,
     MessageRole,
-    SubagentStart,
-    SubagentStop,
+    PromptState,
     SessionState,
+    StepParent,
+    SubagentStart,
     SubagentState,
+    SubagentStop,
     ToolState,
     TranscriptState,
-    StepParent,
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
     extract_chat_from_transcript,
     extract_think_for_tool,
-    search_tool_parent_in_transcript,
-    search_tool_parent_in_subagent_transcript,
-    search_agent_parent_in_transcript,
     search_agent_parent_in_subagent_transcript,
+    search_agent_parent_in_transcript,
+    search_tool_parent_in_subagent_transcript,
+    search_tool_parent_in_transcript,
     truncate,
 )
+from notifications import send_start_notification
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +87,7 @@ class SessionStateManager:
         self._state.episode = EpisodeState(
             span_id=uuid4(),
             start_ns=time.time_ns(),
-            prompt = None,
+            prompt=None,
         )
         logger.info("Starting episode, trace id: %s, span id: %s", self._state.trace_id, self._state.episode.span_id)
 
@@ -99,10 +98,10 @@ class SessionStateManager:
             logger.warning("[BUG] update_episode_prompt() called without an active episode")
             return
         self._state.episode.prompt = PromptState(
-                text=prompt,
-                metadata_id=str(uuid4()),
-                received_ns=time.time_ns(),
-                )
+            text=prompt,
+            metadata_id=str(uuid4()),
+            received_ns=time.time_ns(),
+        )
 
     def end_episode(self) -> EpisodeState | None:
         if self._state.episode is None:
@@ -131,14 +130,12 @@ class SessionStateManager:
 
     def update_prompt(self, prompt: str) -> None:
         self._state.prompt = PromptState(
-                text = prompt,
-                metadata_id = str(uuid4()),
-                received_ns = time.time_ns(),
+            text=prompt,
+            metadata_id=str(uuid4()),
+            received_ns=time.time_ns(),
         )
 
-    def _check_transcript_for_new_chats(
-        self, tracer: Tracer, transcript_path: Path
-    ) -> None:
+    def _check_transcript_for_new_chats(self, tracer: Tracer, transcript_path: Path) -> None:
         # Parse transcript for new chat messages from the assistant, and sends spans accordingly.
         # This solution is horrible, but as of today there's no way for a hook to get data regarding assistant
         # responses/messages :(
@@ -147,9 +144,7 @@ class SessionStateManager:
             logger.warning("Failed to extract chat from transcript")
             return
 
-        logger.debug(
-            "Extracted %d chat messages from transcript.", len(transcript_chat)
-        )
+        logger.debug("Extracted %d chat messages from transcript.", len(transcript_chat))
         new = self._state.check_new_assistant_messages(transcript_chat)
         episode = self._state.episode
         if episode is not None and len(new) > 0:
@@ -170,9 +165,7 @@ class SessionStateManager:
                     ),
                 }
                 attributes["chat_messages_json"] = (
-                    TypeAdapter(list[ChatMessage])
-                    .dump_json(self._state.chat_history)
-                    .decode("utf-8")
+                    TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
                 )
 
                 send_span(
@@ -206,9 +199,7 @@ class SessionStateManager:
             return
 
         task_name = (
-            truncate(episode_data.prompt.text, 50).replace("\n", " ")
-            if episode_data.prompt is not None
-            else "turn"
+            truncate(episode_data.prompt.text, 50).replace("\n", " ") if episode_data.prompt is not None else "turn"
         )
 
         attributes: dict[str, Any] = {
@@ -218,9 +209,7 @@ class SessionStateManager:
         }
         attributes["prompt"] = episode_data.prompt.text if episode_data.prompt is not None else None
         attributes["chat_messages_json"] = (
-            TypeAdapter(list[ChatMessage])
-            .dump_json(self._state.chat_history)
-            .decode("utf-8")
+            TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
         )
 
         send_span(
@@ -240,9 +229,7 @@ class SessionStateManager:
         self.ensure_episode_started()
 
         if event.agent_id in self._state.subagents:
-            logger.warning(
-                "Ignoring subagent start: agent `%s` is already known.", event.agent_id
-            )
+            logger.warning("Ignoring subagent start: agent `%s` is already known.", event.agent_id)
             return
 
         self._state.subagents[event.agent_id] = SubagentState(
@@ -253,9 +240,7 @@ class SessionStateManager:
             transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
         )
 
-    def _get_parent_span_id_from_step_parent(
-        self, item_id: str, step_parent: StepParent
-    ) -> UUID | None:
+    def _get_parent_span_id_from_step_parent(self, item_id: str, step_parent: StepParent) -> UUID | None:
         if step_parent.type == "agent":
             # This tool's parent is an agent
             agent_id = step_parent.agent_id
@@ -264,16 +249,12 @@ class SessionStateManager:
                 logger.debug("Parent of `%s` is unknown agent %s", item_id, agent_id)
                 return None
             parent_span = subagent_state.span_id
-            logger.debug(
-                "Parent of `%s` is agent %s (span: %s)", item_id, agent_id, parent_span
-            )
+            logger.debug("Parent of `%s` is agent %s (span: %s)", item_id, agent_id, parent_span)
             return parent_span
 
         parent_tool_state = self._state.pending_tools.get(step_parent.tool_use_id)
         if parent_tool_state is None:
-            logger.debug(
-                "Parent of `%s` is unknown tool %s", item_id, step_parent.tool_use_id
-            )
+            logger.debug("Parent of `%s` is unknown tool %s", item_id, step_parent.tool_use_id)
             return None
         parent_span = parent_tool_state.span_id
         logger.debug(
@@ -288,9 +269,7 @@ class SessionStateManager:
         try:
             agent = self._state.subagents.pop(event.agent_id)
         except KeyError:
-            logger.warning(
-                "Ignoring subagent stop: agent `%s` is not known.", event.agent_id
-            )
+            logger.warning("Ignoring subagent stop: agent `%s` is not known.", event.agent_id)
             return
 
         start_time_ns = agent.start_time_ns
@@ -307,15 +286,11 @@ class SessionStateManager:
         if self._state.episode is not None:
             parent_span = self._state.episode.span_id
 
-        step_parent = self._guess_parent_for_agent(
-            event.agent_id, event.transcript_path
-        )
+        step_parent = self._guess_parent_for_agent(event.agent_id, event.transcript_path)
 
         # If we found a parent from transcript analysis, use it
         if step_parent is not None:
-            attempt = self._get_parent_span_id_from_step_parent(
-                agent.agent_id, step_parent
-            )
+            attempt = self._get_parent_span_id_from_step_parent(agent.agent_id, step_parent)
             if attempt is not None:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
@@ -341,13 +316,9 @@ class SessionStateManager:
         else:
             tool_use_id = "unknown"
 
-        self._state.pending_tools[tool_use_id] = ToolState(
-            span_id=uuid4(), start_time_ns=time.time_ns()
-        )
+        self._state.pending_tools[tool_use_id] = ToolState(span_id=uuid4(), start_time_ns=time.time_ns())
 
-    def _guess_parent_for_tool(
-        self, tool_use_id: str, transcript_path: str
-    ) -> StepParent | None:
+    def _guess_parent_for_tool(self, tool_use_id: str, transcript_path: str) -> StepParent | None:
         """
         Searches for a parent entity for the given tool.
 
@@ -378,17 +349,13 @@ class SessionStateManager:
             agent_state = subagent.transcript_state
             subagent_transcript_path = subagent.get_transcript_path(transcript_path)
 
-            result = search_tool_parent_in_subagent_transcript(
-                subagent_transcript_path, agent_state, tool_use_id
-            )
+            result = search_tool_parent_in_subagent_transcript(subagent_transcript_path, agent_state, tool_use_id)
             if result is not None:
                 return result
 
         return None
 
-    def _guess_parent_for_agent(
-        self, agent_id: str, transcript_path: str
-    ) -> StepParent | None:
+    def _guess_parent_for_agent(self, agent_id: str, transcript_path: str) -> StepParent | None:
         """
         Searches for a parent entity for the given agent.
 
@@ -419,9 +386,7 @@ class SessionStateManager:
             agent_state = subagent.transcript_state
             subagent_transcript_path = subagent.get_transcript_path(transcript_path)
 
-            result = search_agent_parent_in_subagent_transcript(
-                subagent_transcript_path, agent_state, agent_id
-            )
+            result = search_agent_parent_in_subagent_transcript(subagent_transcript_path, agent_state, agent_id)
             if result is not None:
                 return result
 
@@ -447,9 +412,7 @@ class SessionStateManager:
         }
 
         attributes["chat_messages_json"] = (
-            TypeAdapter(list[ChatMessage])
-            .dump_json(self._state.chat_history)
-            .decode("utf-8")
+            TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
         )
         think = extract_think_for_tool(Path(event.transcript_path), event.tool_use_id)
         attributes["think"] = truncate(think, THINK_MAX_LENGTH) if think else "N/A"
@@ -469,9 +432,7 @@ class SessionStateManager:
 
         # If we found a parent from transcript analysis, use it
         if step_parent is not None:
-            attempt = self._get_parent_span_id_from_step_parent(
-                tool_use_id, step_parent
-            )
+            attempt = self._get_parent_span_id_from_step_parent(tool_use_id, step_parent)
             if attempt is not None:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
@@ -500,7 +461,7 @@ class SessionStateManager:
 
         send_span(
             tracer,
-            name=f"claude_code.session",
+            name="claude_code.session",
             attributes=attributes,
             start_time_ns=self._state.start_time_ns,
             end_time_ns=time.time_ns(),
@@ -508,4 +469,3 @@ class SessionStateManager:
             trace_id=self._state.trace_id,
             explicit_span_id=self._state.session_span_id,
         )
-

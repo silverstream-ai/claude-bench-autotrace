@@ -1,9 +1,9 @@
 from datetime import datetime
-from pathlib import Path
 from enum import StrEnum
 import logging
 import pathlib
-from typing import Any, Self, Literal, Annotated
+from pathlib import Path
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -213,14 +213,10 @@ class SubagentStart(BaseModel):
             ValueError: If the event is not a SubagentStart event or missing required fields.
         """
         if event.hook_event_name != "SubagentStart":
-            raise ValueError(
-                f"Expected SubagentStart event, got {event.hook_event_name}"
-            )
+            raise ValueError(f"Expected SubagentStart event, got {event.hook_event_name}")
 
         if event.agent_id is None or event.agent_type is None:
-            raise ValueError(
-                "SubagentStart event missing required fields: agent_id and/or agent_type"
-            )
+            raise ValueError("SubagentStart event missing required fields: agent_id and/or agent_type")
 
         return cls(
             session_id=event.session_id,
@@ -254,22 +250,16 @@ class SubagentStop(BaseModel):
             ValueError: If the event is not a SubagentStop event or missing required fields.
         """
         if event.hook_event_name != "SubagentStop":
-            raise ValueError(
-                f"Expected SubagentStop event, got {event.hook_event_name}"
-            )
+            raise ValueError(f"Expected SubagentStop event, got {event.hook_event_name}")
 
         if event.agent_id is None:
             raise ValueError("SubagentStop event missing required field: agent_id")
 
         if event.agent_transcript_path is None:
-            raise ValueError(
-                "SubagentStop event missing required field: agent_transcript_path"
-            )
+            raise ValueError("SubagentStop event missing required field: agent_transcript_path")
 
         if event.stop_hook_active is None:
-            raise ValueError(
-                "SubagentStop event missing required field: stop_hook_active"
-            )
+            raise ValueError("SubagentStop event missing required field: stop_hook_active")
 
         return cls(
             session_id=event.session_id,
@@ -282,9 +272,7 @@ class SubagentStop(BaseModel):
 
 
 class ClaudeCodeTracingSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="CLAUDE_CODE_", env_file=ENV_FILE, extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_prefix="CLAUDE_CODE_", env_file=ENV_FILE, extra="ignore")
 
     collector_base_url: str | None = None
     endpoint_code: str | None = None
@@ -312,10 +300,12 @@ class PromptState(BaseModel):
     received_ns: int
     metadata_id: str
 
+
 class EpisodeState(BaseModel):
     span_id: UUID
     start_ns: int
     prompt: PromptState | None
+
 
 class AgentParent(BaseModel):
     """
@@ -405,26 +395,18 @@ class SessionState(BaseModel):
         if path.exists():
             path.unlink()
 
-    def check_new_assistant_messages(
-        self, chat: list[ChatMessage]
-    ) -> list[ChatMessage]:
+    def check_new_assistant_messages(self, chat: list[ChatMessage]) -> list[ChatMessage]:
         """
         Filters all new (i.e. previously unknown for this session) messages from the assistant.
         """
         # set of already-known assistant messages
-        seen = {
-            (m.message, m.timestamp)
-            for m in self.chat_history
-            if m.role is MessageRole.ASSISTANT
-        }
+        seen = {(m.message, m.timestamp) for m in self.chat_history if m.role is MessageRole.ASSISTANT}
 
         # de-dupe incoming assistant messages + filter out already-known ones (O(n))
         new: list[ChatMessage] = []
         for m in chat:
             if m.role is not MessageRole.ASSISTANT:
-                raise ValueError(
-                    "merge_new_assistant_messages called with message role: %s", m.role
-                )
+                raise ValueError("merge_new_assistant_messages called with message role: %s", m.role)
             k = (m.message, m.timestamp)
             if k in seen:
                 continue
