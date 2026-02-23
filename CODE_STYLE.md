@@ -2,7 +2,11 @@
 
 These are strict rules that must be followed.
 
-**Offensive Programming**: As long as we are in beta or dev mode, internal code should crash ASAP when something is wrong. It's better to crash loudly than to silently produce incorrect results.
+**Offensive Programming**: How aggressively we fail depends on who owns the data:
+
+- **Internal calls/APIs**: crash ASAP when something is wrong. It's better to crash loudly than to silently produce incorrect results.
+- **External APIs we control** (e.g. our own collector backend): surface errors loudly. If the data is broken or unexpected, complain — we own the contract and a violation is a bug we need to know about.
+- **External APIs we don't control** (e.g. Claude Code hook event format): be lenient. Ignore unknown fields, treat missing optional data gracefully, and don't break if the format evolves. Use `extra="ignore"` on Pydantic models and prefer `None`-safe defaults over hard failures.
 
 **No unnecessary defaults**: We don't set variables to `null`, or `None`, or default values "just in case". At most points in the code, and especially for internal modules/APIs, we should be aware of what values _must_ and _can_ be set:
   - If a parameter is optional and is used only internally, the (internal) caller should just set it to `None` explicitly
