@@ -1,3 +1,4 @@
+# ruff: noqa: N815 -- camelCase fields mirror Claude Code's JSON transcript format verbatim
 from datetime import datetime
 from enum import StrEnum
 import logging

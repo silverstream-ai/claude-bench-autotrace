@@ -25,35 +25,6 @@ select = [
     "UP006", # List typing -> list https://docs.astral.sh/ruff/rules/non-pep585-annotation/
     "TID252", # ban relative imports
 ]
-ignore = [
-    "PLR2004", # Ignore magic numbers for now
-    "ERA001",  # Ignore commented code for now - we'll clean this up separately
-    "PTH123",  # Ignore open() -> Path.open() for now
-    "PTH118",  # Ignore os.path.join -> Path operator for now
-    "PTH120",  # Ignore os.path.dirname -> Path.parent for now
-    "PTH110",  # Ignore os.path.exists -> Path.exists for now
-    "PTH103",  # Ignore os.makedirs -> Path.mkdir for now
-    "PTH119",  # Ignore os.path.basename -> Path.name for now
-    "PTH122",  # Ignore os.path.splitext -> Path.suffix for now
-    "PTH202",  # Ignore os.path.getsize -> Path.stat().st_size for now
-    "PTH207",  # Ignore glob -> Path.glob for now
-    "RUF012",  # Ignore mutable class attributes warning
-    "RUF013",  # Ignore implicit Optional warning
-    "RUF001",  # Ignore ambiguous quote warning
-    "RUF005",  # Ignore iterable unpacking suggestion
-    "RUF015",  # Ignore next() over slice suggestion
-    "PLR0911", # Ignore too many return statements
-    "PLR0912", # Ignore too many branches
-    "PLR0915", # Ignore too many statements
-    "PLR1722", # Ignore sys.exit suggestion
-    "N815",    # Ignore mixed case variable names in class scope
-    "N818",    # Ignore missing Error suffix in exception names
-    "N802",    # Ignore function name should be lowercase
-    "PLW0603", # Ignore global statement usage warning
-    "PLW2901", # Ignore loop variable overwritten warning
-    "PLE1205", # Ignore too many arguments for logging format string
-    "UP022",   # Ignore capture_output suggestion
-]
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
@@ -117,7 +88,7 @@ classmethod-decorators = [
 
 [tool.mypy]
 strict = true
-disable_error_code = ["union-attr", "no-untyped-call", "import-untyped", "unused-ignore"]
 plugins = ['pydantic.mypy']
 mypy_path = ["$MYPY_CONFIG_FILE_DIR/claude_autotrace_hook"]
 cache_dir = ".mypy_cache"
+
