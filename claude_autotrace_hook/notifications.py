@@ -1,5 +1,6 @@
 from pathlib import Path
-from notifypy import Notify
+
+from notifypy import Notify  # type: ignore[import-untyped]
 
 
 def _best_icon_size(available: set[int], base: int) -> int:
@@ -8,13 +9,13 @@ def _best_icon_size(available: set[int], base: int) -> int:
     96 DPI is the common "100% scale" baseline -> scale = dpi/96.
     """
     try:
-        import tkinter as tk
+        import tkinter as tk  # noqa: PLC0415
 
         r = tk.Tk()
         r.withdraw()
         dpi = float(r.winfo_fpixels("1i"))
         r.destroy()
-        target = int(round(base * max(1.0, dpi / 96.0)))
+        target = round(base * max(1.0, dpi / 96.0))
     except Exception:
         target = base  # If Tk/DPI isn't available, just use the base size.
 
@@ -28,13 +29,11 @@ def _best_icon_size(available: set[int], base: int) -> int:
     return sizes[-1]
 
 
-def send_start_notification():
+def send_start_notification() -> None:
     notification = Notify()
     best_size = _best_icon_size({32, 64, 128, 256}, 64)
     notification.title = "Bench is ready to go!"
     notification.message = "Claude Code is sending telemetry to Silverstream Bench."
-    notification.icon = (
-        Path(__file__).parent.parent / "icons" / f"ss-logo-{best_size}.png"
-    )
+    notification.icon = Path(__file__).parent.parent / "icons" / f"ss-logo-{best_size}.png"
     notification.application_name = "Silverstream Bench"
     notification.send()

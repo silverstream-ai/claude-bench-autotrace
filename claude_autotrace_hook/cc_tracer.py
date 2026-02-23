@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import json
-
 import logging
 import sys
+
+from opentelemetry.trace import Tracer
 
 from cc_tracer_lib.models import (
     ENV_FILE,
@@ -10,16 +11,12 @@ from cc_tracer_lib.models import (
     HookEvent,
     SubagentStart,
     SubagentStop,
-    MessageRole,
 )
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
-from opentelemetry.trace import Tracer
 
 
-def process_event(
-    event: HookEvent, tracer: Tracer, manager: SessionStateManager
-) -> None:
+def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager) -> None:
 
     if event.hook_event_name == "PreToolUse":
         manager.handle_tool_selected(event)
@@ -39,9 +36,7 @@ def process_event(
     elif event.hook_event_name == "SubagentStop":
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionStart":
-        print(
-            f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}'
-        )
+        print(f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}')
         logging.info("Started new session: %s", event.session_id)
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
@@ -62,10 +57,12 @@ def main() -> None:
         if event.hook_event_name == "SessionStart":
             # Output to stdout so Claude sees it, and log to file
             print(
-                f'{{"status":"info","message":"Tracing disabled. Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in {ENV_FILE} to enable."}}'
+                f'{{"status":"info","message":"Tracing disabled. '
+                f'Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in {ENV_FILE} to enable."}}'
             )
             logging.warning(
-                "Claude Code tracing disabled (set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
+                "Claude Code tracing disabled "
+                "(set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
                 ENV_FILE,
             )
 
@@ -73,9 +70,7 @@ def main() -> None:
             logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(
-        event.session_id, settings.notify_sessions
-    )
+    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
     tracer = setup_tracer(
         collector_base_url=settings.collector_base_url,
         endpoint_code=settings.endpoint_code,
