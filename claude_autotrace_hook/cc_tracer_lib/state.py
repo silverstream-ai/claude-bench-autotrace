@@ -358,6 +358,16 @@ class SessionStateManager:
             agent.span_id,
             {MessageRole.USER, MessageRole.ASSISTANT},
         )
+        first_user_chat = next(
+            (m for m in agent.chat_history if m.role is MessageRole.USER),
+            None,
+        )
+        if first_user_chat is not None:
+            agent.prompt = PromptState(
+                text=first_user_chat.message,
+                metadata_id=str(uuid4()),
+                received_ns=int(first_user_chat.timestamp * 1e9),
+            )
 
         start_time_ns = agent.start_time_ns
         end_time_ns = time.time_ns()
@@ -368,6 +378,8 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
         attributes["agent_id"] = event.agent_id
+        if agent.prompt is not None:
+            attributes["prompt"] = agent.prompt.text
 
         parent_span = self._state.session_span_id
         if self._state.episode is not None:
