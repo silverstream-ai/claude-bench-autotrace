@@ -167,7 +167,7 @@ class SessionStateManager:
                 attributes["chat_messages_json"] = (
                     TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
                 )
-                timestamp_ns = int(n.timestamp * 1.e09)
+                timestamp_ns = int(n.timestamp * 1.0e09)
 
                 send_span(
                     tracer,
