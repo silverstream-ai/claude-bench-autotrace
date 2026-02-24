@@ -534,7 +534,6 @@ class SessionStateManager:
         if self._state.prompt is not None:
             attributes["prompt"] = self._state.prompt.text
 
-
         send_span(
             tracer,
             name="claude_code.session",
