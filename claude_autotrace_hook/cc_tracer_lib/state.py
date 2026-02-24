@@ -32,7 +32,6 @@ from cc_tracer_lib.models import (
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
-    extract_chat_from_transcript,
     extract_think_for_tool,
     search_agent_parent_in_subagent_transcript,
     search_agent_parent_in_transcript,
