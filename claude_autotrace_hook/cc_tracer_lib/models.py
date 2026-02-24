@@ -163,7 +163,7 @@ class ToolResponse(BaseModel):
     status: str | None = None
     prompt: str | None = None
     agentId: str | None = None
-    content: list[ToolResponseContentBlock] | None = None
+    content: str | list[ToolResponseContentBlock] | None = None
     totalDurationMs: int | float | None = None
     totalTokens: int | None = None
     totalToolUseCount: int | None = None
