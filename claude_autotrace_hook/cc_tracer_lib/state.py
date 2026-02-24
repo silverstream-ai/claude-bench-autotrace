@@ -531,6 +531,8 @@ class SessionStateManager:
             AL2_NAME: "session",
             AL2_EXPERIMENT: "claude-code-session",
         }
+        if self._state.prompt is not None:
+            attributes["prompt"] = self._state.prompt.text
 
         send_span(
             tracer,
