@@ -32,13 +32,13 @@ from cc_tracer_lib.models import (
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
-    extract_chat_from_transcript,
     extract_think_for_tool,
     search_agent_parent_in_subagent_transcript,
     search_agent_parent_in_transcript,
     search_tool_parent_in_subagent_transcript,
     search_tool_parent_in_transcript,
     truncate,
+    update_transcript,
 )
 from notifications import send_start_notification
 
@@ -54,7 +54,7 @@ class SessionStateManager:
         state = SessionState(
             trace_id=uuid4(),
             session_start_time=datetime.now(tz=UTC),
-            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+            transcript_state=TranscriptState(agent_parents={}, tool_parents={}, chat_messages=[]),
             chat_history=[],
             episode=None,
             start_time_ns=time.time_ns(),
@@ -135,57 +135,95 @@ class SessionStateManager:
             received_ns=time.time_ns(),
         )
 
-    def _check_transcript_for_new_chats(self, tracer: Tracer, transcript_path: Path) -> None:
-        # Parse transcript for new chat messages from the assistant, and sends spans accordingly.
-        # This solution is horrible, but as of today there's no way for a hook to get data regarding assistant
-        # responses/messages :(
-        transcript_chat = extract_chat_from_transcript(transcript_path)
-        if transcript_chat is None:
-            logger.warning("Failed to extract chat from transcript")
-            return
+    def _send_chat_span(
+        self,
+        tracer: Tracer,
+        chat_message: ChatMessage,
+        chat_history: list[ChatMessage],
+        parent_span_id: UUID,
+    ) -> None:
+        attributes: dict[str, Any] = {
+            AL2_TYPE: TYPE_STEP,
+            AL2_NAME: "chat",
+            AL2_EXPERIMENT: "claude-code-session",
+            "agent_output": json.dumps(
+                {
+                    "actions": [{"name": "Chat", "arguments": chat_message.model_dump()}],
+                    "llm_output": {},
+                }
+            ),
+        }
+        attributes["chat_messages_json"] = TypeAdapter(list[ChatMessage]).dump_json(chat_history).decode("utf-8")
+        timestamp_ns = int(chat_message.timestamp * 1.0e09)
 
+        send_span(
+            tracer,
+            name="claude_code.chat",
+            attributes=attributes,
+            start_time_ns=timestamp_ns,
+            end_time_ns=timestamp_ns + 1,
+            context=make_context(self._state.trace_id, parent_span_id),
+            trace_id=self._state.trace_id,
+        )
+
+    def _insert_chat_message_sorted(self, chat_history: list[ChatMessage], chat_message: ChatMessage) -> None:
+        i = 0
+        while i < len(chat_history) and chat_history[i].timestamp <= chat_message.timestamp:
+            i += 1
+        chat_history.insert(i, chat_message)
+
+    def _check_transcript_for_new_chats(
+        self,
+        tracer: Tracer,
+        transcript_state: TranscriptState,
+        chat_history: list[ChatMessage],
+        parent_span_id: UUID,
+        allowed_roles: set[MessageRole],
+    ) -> None:
+        transcript_chat = transcript_state.chat_messages
         logger.debug("Extracted %d chat messages from transcript.", len(transcript_chat))
-        new = self._state.check_new_assistant_messages(transcript_chat)
-        episode = self._state.episode
-        if episode is not None and len(new) > 0:
+
+        seen = {(m.message, m.timestamp) for m in chat_history if m.role in allowed_roles}
+        new_chat: list[ChatMessage] = []
+        for m in transcript_chat:
+            if m.role not in allowed_roles:
+                continue
+            k = (m.message, m.timestamp)
+            if k in seen:
+                continue
+            seen.add(k)
+            new_chat.append(m)
+        new_chat.sort(key=lambda m: m.timestamp)
+
+        if len(new_chat) > 0:
+            new_chat_spans = [m for m in new_chat if m.role is MessageRole.ASSISTANT]
             logger.debug(
                 "Found %d new chat messages in transcript, creating spans for those",
-                len(new),
+                len(new_chat_spans),
             )
-            for n in new:
-                attributes: dict[str, Any] = {
-                    AL2_TYPE: TYPE_STEP,
-                    AL2_NAME: "chat",
-                    AL2_EXPERIMENT: "claude-code-session",
-                    "agent_output": json.dumps(
-                        {
-                            "actions": [{"name": "Chat", "arguments": n.model_dump()}],
-                            "llm_output": {},
-                        }
-                    ),
-                }
-                attributes["chat_messages_json"] = (
-                    TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
-                )
-                timestamp_ns = int(n.timestamp * 1.0e09)
-
-                send_span(
-                    tracer,
-                    name="claude_code.chat",
-                    attributes=attributes,
-                    start_time_ns=timestamp_ns,
-                    end_time_ns=timestamp_ns + 1,
-                    context=make_context(self._state.trace_id, episode.span_id),
-                    trace_id=self._state.trace_id,
-                )
-        self._state.add_new_assistant_messages(new)
+            for n in new_chat:
+                if n.role is MessageRole.ASSISTANT:
+                    self._send_chat_span(
+                        tracer,
+                        n,
+                        chat_history,
+                        parent_span_id,
+                    )
+                self._insert_chat_message_sorted(chat_history, n)
 
     def handle_notification(self, tracer: Tracer, event: HookEvent) -> None:
         if self._state.episode is None:
             logger.warning("Notification received without an active episode")
             return
 
-        self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
+        update_transcript(self._state.transcript_state, Path(event.transcript_path))
+        self._check_transcript_for_new_chats(
+            tracer,
+            self._state.transcript_state,
+            self._state.chat_history,
+            self._state.episode.span_id,
+            {MessageRole.ASSISTANT},
+        )
 
     def handle_prompt_submit(self, prompt: str) -> None:
         self.ensure_episode_started()
@@ -193,7 +231,15 @@ class SessionStateManager:
         self.add_chat_message(prompt, MessageRole.USER)
 
     def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
-        self._check_transcript_for_new_chats(tracer, Path(event.transcript_path))
+        update_transcript(self._state.transcript_state, Path(event.transcript_path))
+        parent_span_id = self._state.episode.span_id if self._state.episode is not None else self._state.session_span_id
+        self._check_transcript_for_new_chats(
+            tracer,
+            self._state.transcript_state,
+            self._state.chat_history,
+            parent_span_id,
+            {MessageRole.ASSISTANT},
+        )
 
         episode_data = self.end_episode()
         if episode_data is None:
@@ -238,7 +284,8 @@ class SessionStateManager:
             span_id=uuid4(),
             agent_type=event.agent_type,
             start_time_ns=time.time_ns(),
-            transcript_state=TranscriptState(agent_parents={}, tool_parents={}),
+            transcript_state=TranscriptState(agent_parents={}, tool_parents={}, chat_messages=[]),
+            chat_history=[],
         )
 
     def _get_parent_span_id_from_step_parent(self, item_id: str, step_parent: StepParent) -> UUID | None:
@@ -273,6 +320,19 @@ class SessionStateManager:
             logger.warning("Ignoring subagent stop: agent `%s` is not known.", event.agent_id)
             return
 
+        update_transcript(agent.transcript_state, Path(event.agent_transcript_path))
+        self._check_transcript_for_new_chats(
+            tracer,
+            agent.transcript_state,
+            agent.chat_history,
+            agent.span_id,
+            {MessageRole.USER, MessageRole.ASSISTANT},
+        )
+        first_user_chat = next(
+            (m for m in agent.chat_history if m.role is MessageRole.USER),
+            None,
+        )
+
         start_time_ns = agent.start_time_ns
         end_time_ns = time.time_ns()
 
@@ -282,6 +342,8 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
         attributes["agent_id"] = event.agent_id
+        if first_user_chat is not None:
+            attributes["prompt"] = first_user_chat.message
 
         parent_span = self._state.session_span_id
         if self._state.episode is not None:
@@ -412,12 +474,6 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
 
-        attributes["chat_messages_json"] = (
-            TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
-        )
-        think = extract_think_for_tool(Path(event.transcript_path), event.tool_use_id)
-        attributes["think"] = truncate(think, THINK_MAX_LENGTH) if think else "N/A"
-
         if event.tool_input:
             agent_output = {
                 "actions": [{"name": event.tool_name, "arguments": event.tool_input}],
@@ -430,6 +486,22 @@ class SessionStateManager:
             parent_span = self._state.episode.span_id
 
         step_parent = self._guess_parent_for_tool(tool_use_id, event.transcript_path)
+        chat_messages_for_tool = self._state.chat_history
+        think_transcript_path = Path(event.transcript_path)
+
+        if step_parent is not None and step_parent.type == "agent":
+            subagent = self._state.subagents.get(step_parent.agent_id)
+            if subagent is not None:
+                subagent_transcript_path = subagent.get_transcript_path(event.transcript_path)
+                update_transcript(subagent.transcript_state, subagent_transcript_path)
+                chat_messages_for_tool = subagent.transcript_state.chat_messages
+                think_transcript_path = subagent_transcript_path
+
+        attributes["chat_messages_json"] = (
+            TypeAdapter(list[ChatMessage]).dump_json(chat_messages_for_tool).decode("utf-8")
+        )
+        think = extract_think_for_tool(think_transcript_path, event.tool_use_id)
+        attributes["think"] = truncate(think, THINK_MAX_LENGTH) if think else "N/A"
 
         # If we found a parent from transcript analysis, use it
         if step_parent is not None:

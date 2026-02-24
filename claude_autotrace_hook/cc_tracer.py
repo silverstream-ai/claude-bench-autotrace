@@ -17,7 +17,6 @@ from cc_tracer_lib.state import SessionStateManager
 
 
 def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager) -> None:
-
     if event.hook_event_name == "PreToolUse":
         manager.handle_tool_selected(event)
     elif event.hook_event_name == "PostToolUse":
