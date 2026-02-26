@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
@@ -248,6 +248,8 @@ ToolInputAction = Annotated[
     Field(discriminator="action"),
 ]
 
+TOOL_INPUT_ACTION_ADAPTER: TypeAdapter[ToolInputAction] = TypeAdapter(ToolInputAction)
+
 
 
 class ScrollStepOutput(BaseModel):
@@ -313,8 +315,7 @@ def _text_responses_and_screenshot(
     for block in blocks:
         if isinstance(block, ToolResponseBlockText):
             text_responses.append(block.text)
-        elif isinstance(block, ToolResponseBlockImage):
-            if screenshot is None:
+        elif isinstance(block, ToolResponseBlockImage) and screenshot is None:
                 screenshot = block.source.data
     return text_responses, screenshot
 
@@ -327,7 +328,7 @@ def build_step_output(
     Validate tool_input as a known action and build the step output for the trace.
     Raises ValidationError if tool_input is not one of scroll, screenshot, left_click, type, key, wait.
     """
-    action = ToolInputAction.model_validate(tool_input)
+    action = TOOL_INPUT_ACTION_ADAPTER.validate_python(tool_input)
     text_responses, screenshot = _text_responses_and_screenshot(blocks)
     if isinstance(action, ToolInputScroll):
         return ScrollStepOutput(
