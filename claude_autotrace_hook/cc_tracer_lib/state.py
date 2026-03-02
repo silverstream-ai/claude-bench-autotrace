@@ -240,7 +240,7 @@ class SessionStateManager:
         tracer: Tracer,
         transcript_state: TranscriptState,
         queued_chat_history: list[ChatMessage],
-        parent_span_id: UUID,
+        current_episode: EpisodeState,
     ) -> None:
         seen = {(m.message, m.timestamp) for m in queued_chat_history}
         new_queued: list[ChatMessage] = []
@@ -252,7 +252,9 @@ class SessionStateManager:
             new_queued.append(m)
         new_queued.sort(key=lambda m: m.timestamp)
         for m in new_queued:
-            self._send_interrupt_span(tracer, m, parent_span_id)
+            self._send_interrupt_span(tracer, m, current_episode.span_id)
+            if current_episode is not None:
+                current_episode.queued_messages.append(m)
             queued_chat_history.append(m)
 
     def handle_notification(self, tracer: Tracer, event: HookEvent) -> None:
@@ -272,7 +274,7 @@ class SessionStateManager:
             tracer,
             self._state.transcript_state,
             self._state.queued_chat_history,
-            self._state.episode.span_id,
+            self._state.episode,
         )
 
     def handle_prompt_submit(self, prompt: str) -> None:
@@ -295,7 +297,7 @@ class SessionStateManager:
                 tracer,
                 self._state.transcript_state,
                 self._state.queued_chat_history,
-                parent_span_id,
+                self._state.episode,
             )
 
         episode_data = self.end_episode()
@@ -315,8 +317,10 @@ class SessionStateManager:
         attributes["chat_messages_json"] = (
             TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
         )
-        attributes["queued_messages_json"] = (
-            TypeAdapter(list[ChatMessage]).dump_json(episode_data.queued_messages).decode("utf-8")
+        attributes["interrupts_json"] = (
+            TypeAdapter(list[str])
+            .dump_json([m.message for m in sorted(episode_data.queued_messages, key=lambda x: x.timestamp)])
+            .decode("utf-8")
         )
 
         send_span(
