@@ -56,6 +56,7 @@ class SessionStateManager:
             session_start_time=datetime.now(tz=UTC),
             transcript_state=TranscriptState(agent_parents={}, tool_parents={}, chat_messages=[]),
             chat_history=[],
+            queued_chat_history=[],
             episode=None,
             start_time_ns=time.time_ns(),
             prompt=None,
@@ -211,6 +212,51 @@ class SessionStateManager:
                     )
                 self._insert_chat_message_sorted(chat_history, n)
 
+    def _send_interrupt_span(
+        self,
+        tracer: Tracer,
+        chat_message: ChatMessage,
+        parent_span_id: UUID,
+    ) -> None:
+        attributes: dict[str, Any] = {
+            AL2_TYPE: TYPE_STEP,
+            AL2_NAME: "interrupt",
+            AL2_EXPERIMENT: "claude-code-session",
+            "prompt": chat_message.message,
+        }
+        timestamp_ns = int(chat_message.timestamp * 1.0e09)
+        send_span(
+            tracer,
+            name="claude_code.interrupt",
+            attributes=attributes,
+            start_time_ns=timestamp_ns,
+            end_time_ns=timestamp_ns + 1,
+            context=make_context(self._state.trace_id, parent_span_id),
+            trace_id=self._state.trace_id,
+        )
+
+    def _check_transcript_for_new_queued(
+        self,
+        tracer: Tracer,
+        transcript_state: TranscriptState,
+        queued_chat_history: list[ChatMessage],
+        current_episode: EpisodeState,
+    ) -> None:
+        seen = {(m.message, m.timestamp) for m in queued_chat_history}
+        new_queued: list[ChatMessage] = []
+        for m in transcript_state.queued_messages:
+            k = (m.message, m.timestamp)
+            if k in seen:
+                continue
+            seen.add(k)
+            new_queued.append(m)
+        new_queued.sort(key=lambda m: m.timestamp)
+        for m in new_queued:
+            self._send_interrupt_span(tracer, m, current_episode.span_id)
+            if current_episode is not None:
+                current_episode.queued_messages.append(m)
+            queued_chat_history.append(m)
+
     def handle_notification(self, tracer: Tracer, event: HookEvent) -> None:
         if self._state.episode is None:
             logger.warning("Notification received without an active episode")
@@ -223,6 +269,12 @@ class SessionStateManager:
             self._state.chat_history,
             self._state.episode.span_id,
             {MessageRole.ASSISTANT},
+        )
+        self._check_transcript_for_new_queued(
+            tracer,
+            self._state.transcript_state,
+            self._state.queued_chat_history,
+            self._state.episode,
         )
 
     def handle_prompt_submit(self, prompt: str) -> None:
@@ -240,6 +292,13 @@ class SessionStateManager:
             parent_span_id,
             {MessageRole.ASSISTANT},
         )
+        if self._state.episode is not None:
+            self._check_transcript_for_new_queued(
+                tracer,
+                self._state.transcript_state,
+                self._state.queued_chat_history,
+                self._state.episode,
+            )
 
         episode_data = self.end_episode()
         if episode_data is None:
@@ -257,6 +316,11 @@ class SessionStateManager:
         attributes["prompt"] = episode_data.prompt.text if episode_data.prompt is not None else None
         attributes["chat_messages_json"] = (
             TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
+        )
+        attributes["interrupts_json"] = (
+            TypeAdapter(list[str])
+            .dump_json([m.message for m in sorted(episode_data.queued_messages, key=lambda x: x.timestamp)])
+            .decode("utf-8")
         )
 
         send_span(
