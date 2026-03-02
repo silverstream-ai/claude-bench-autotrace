@@ -306,6 +306,7 @@ class EpisodeState(BaseModel):
     span_id: UUID
     start_ns: int
     prompt: PromptState | None
+    queued_messages: list[ChatMessage] = []
 
 
 class AgentParent(BaseModel):
@@ -339,6 +340,8 @@ class TranscriptState(BaseModel):
     tool_parents: dict[str, StepParent]
     # Assistant chat messages parsed from transcript
     chat_messages: list[ChatMessage]
+    # Interrupt messages: enqueued during tool execution (no corresponding user entry)
+    queued_messages: list[ChatMessage] = []
 
 
 class SubagentState(BaseModel):

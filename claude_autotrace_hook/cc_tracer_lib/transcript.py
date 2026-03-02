@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -87,9 +88,11 @@ def update_transcript(  # noqa: C901, PLR0912, PLR0915
     if entries is None:
         return
 
-    # Single pass through entries to cache parent relationships and transcript chat messages
     logger.debug("%d entries in %s", len(entries), transcript_path)
+
+    # Single pass through entries to cache parent relationships and transcript chat messages
     chat_messages: list[ChatMessage] = []
+    queued_messages: list[ChatMessage] = []
     for entry in entries:
         # Check for progress entry indicating agent spawned by tool
         # It has type = progress, parentToolUseID=<parent tool>, data = {agentId=<child agent id>}
@@ -192,8 +195,38 @@ def update_transcript(  # noqa: C901, PLR0912, PLR0915
                     timestamp=entry.timestamp.timestamp(),
                 )
             )
+        elif entry.type == "queue-operation" and entry.operation == "enqueue":
+            if entry.timestamp is None:
+                logging.warning(
+                    "Bad transcript entry %s: timestamp is missing for queue-operation type",
+                    entry.model_dump_json(),
+                )
+                continue
+            if not isinstance(entry.content, str):
+                logging.warning(
+                    "Bad transcript entry %s: unsupported queue-operation content payload",
+                    entry.model_dump_json(),
+                )
+                continue
+            # Tool execution tasks are enqueued here with a tool_use_id that links them
+            # to a tool_use block already present in the main transcript — skip to avoid
+            # duplication with the tool spans captured via PreToolUse/PostToolUse hooks.
+            try:
+                parsed = json.loads(entry.content)
+                if isinstance(parsed, dict) and "tool_use_id" in parsed:
+                    continue
+            except (json.JSONDecodeError, ValueError):
+                pass
+            queued_messages.append(
+                ChatMessage(
+                    message=entry.content,
+                    role=MessageRole.USER,
+                    timestamp=entry.timestamp.timestamp(),
+                )
+            )
 
     agent_state.chat_messages = chat_messages
+    agent_state.queued_messages = queued_messages
 
 
 def search_tool_parent_in_subagent_transcript(
