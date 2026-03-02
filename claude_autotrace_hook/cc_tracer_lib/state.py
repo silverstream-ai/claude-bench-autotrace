@@ -56,6 +56,7 @@ class SessionStateManager:
             session_start_time=datetime.now(tz=UTC),
             transcript_state=TranscriptState(agent_parents={}, tool_parents={}, chat_messages=[]),
             chat_history=[],
+            queued_chat_history=[],
             episode=None,
             start_time_ns=time.time_ns(),
             prompt=None,
@@ -238,10 +239,10 @@ class SessionStateManager:
         self,
         tracer: Tracer,
         transcript_state: TranscriptState,
-        episode: EpisodeState,
+        queued_chat_history: list[ChatMessage],
         parent_span_id: UUID,
     ) -> None:
-        seen = {(m.message, m.timestamp) for m in episode.queued_messages}
+        seen = {(m.message, m.timestamp) for m in queued_chat_history}
         new_queued: list[ChatMessage] = []
         for m in transcript_state.queued_messages:
             k = (m.message, m.timestamp)
@@ -252,7 +253,7 @@ class SessionStateManager:
         new_queued.sort(key=lambda m: m.timestamp)
         for m in new_queued:
             self._send_interrupt_span(tracer, m, parent_span_id)
-            episode.queued_messages.append(m)
+            queued_chat_history.append(m)
 
     def handle_notification(self, tracer: Tracer, event: HookEvent) -> None:
         if self._state.episode is None:
@@ -270,7 +271,7 @@ class SessionStateManager:
         self._check_transcript_for_new_queued(
             tracer,
             self._state.transcript_state,
-            self._state.episode,
+            self._state.queued_chat_history,
             self._state.episode.span_id,
         )
 
@@ -293,7 +294,7 @@ class SessionStateManager:
             self._check_transcript_for_new_queued(
                 tracer,
                 self._state.transcript_state,
-                self._state.episode,
+                self._state.queued_chat_history,
                 parent_span_id,
             )
 

@@ -368,6 +368,7 @@ class SessionState(BaseModel):
     trace_id: UUID
     session_start_time: datetime
     chat_history: list[ChatMessage]
+    queued_chat_history: list[ChatMessage]
     # Single back-and-forth in the main worker
     episode: EpisodeState | None
     pending_tools: dict[str, ToolState]
