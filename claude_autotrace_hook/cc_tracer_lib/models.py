@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
@@ -170,6 +170,187 @@ class ToolResponse(BaseModel):
     usage: Usage | None = None
 
 
+class ToolResponseBlockImageSource(BaseModel):
+    """Source for image content in list-format tool responses."""
+
+    model_config = ConfigDict(extra="ignore")
+    data: str
+    media_type: str
+    type: Literal["base64"]
+
+
+class ToolResponseBlockText(BaseModel):
+    """Text content block when tool_response is a list of blocks."""
+
+    model_config = ConfigDict(extra="ignore")
+    type: Literal["text"]
+    text: str
+
+
+class ToolResponseBlockImage(BaseModel):
+    """Image content block when tool_response is a list of blocks."""
+
+    model_config = ConfigDict(extra="ignore")
+    type: Literal["image"]
+    source: ToolResponseBlockImageSource
+
+
+ToolResponseBlock = Annotated[
+    ToolResponseBlockText | ToolResponseBlockImage,
+    Field(discriminator="type"),
+]
+
+
+class ToolInputScroll(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["scroll"]
+    coordinate: list[int]  # [x, y]
+    scroll_direction: str
+    scroll_amount: int
+
+
+class ToolInputScreenshot(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["screenshot"]
+
+
+class ToolInputLeftClick(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["left_click"]
+    coordinate: list[int]  # [x, y]
+
+
+class ToolInputType(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["type"]
+    text: str
+
+
+class ToolInputKey(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["key"]
+    text: str
+
+
+class ToolInputWait(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["wait"]
+    duration: int
+
+
+ToolInputAction = Annotated[
+    ToolInputScroll
+    | ToolInputScreenshot
+    | ToolInputLeftClick
+    | ToolInputType
+    | ToolInputKey
+    | ToolInputWait,
+    Field(discriminator="action"),
+]
+
+TOOL_INPUT_ACTION_ADAPTER: TypeAdapter[ToolInputAction] = TypeAdapter(ToolInputAction)
+
+
+
+class ScrollStepOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["scroll"] = "scroll"
+    scroll_direction: str
+    scroll_amount: int
+    coordinate: list[int]
+    screenshot: str | None = None
+    text_responses: list[str]
+
+
+class ScreenshotStepOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["screenshot"] = "screenshot"
+    screenshot: str | None = None
+    text_responses: list[str]
+
+
+class LeftClickStepOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["left_click"] = "left_click"
+    coordinate: list[int]
+    text_responses: list[str]
+
+
+class TypeStepOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["type"] = "type"
+    text: str
+    text_responses: list[str]
+
+
+class KeyStepOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["key"] = "key"
+    text: str
+    text_responses: list[str]
+
+
+class WaitStepOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    action: Literal["wait"] = "wait"
+    duration: int
+    text_responses: list[str]
+
+
+StepOutput = (
+    ScrollStepOutput
+    | ScreenshotStepOutput
+    | LeftClickStepOutput
+    | TypeStepOutput
+    | KeyStepOutput
+    | WaitStepOutput
+)
+
+
+def _text_responses_and_screenshot(
+    blocks: list[ToolResponseBlock],
+) -> tuple[list[str], str | None]:
+    text_responses: list[str] = []
+    screenshot: str | None = None
+    for block in blocks:
+        if isinstance(block, ToolResponseBlockText):
+            text_responses.append(block.text)
+        elif isinstance(block, ToolResponseBlockImage) and screenshot is None:
+                screenshot = block.source.data
+    return text_responses, screenshot
+
+
+def build_step_output(
+    tool_input: dict[str, Any],
+    blocks: list[ToolResponseBlock],
+) -> StepOutput:
+    """
+    Validate tool_input as a known action and build the step output for the trace.
+    Raises ValidationError if tool_input is not one of scroll, screenshot, left_click, type, key, wait.
+    """
+    action = TOOL_INPUT_ACTION_ADAPTER.validate_python(tool_input)
+    text_responses, screenshot = _text_responses_and_screenshot(blocks)
+    if isinstance(action, ToolInputScroll):
+        return ScrollStepOutput(
+            scroll_direction=action.scroll_direction,
+            scroll_amount=action.scroll_amount,
+            coordinate=action.coordinate,
+            screenshot=screenshot,
+            text_responses=text_responses,
+        )
+    if isinstance(action, ToolInputScreenshot):
+        return ScreenshotStepOutput(screenshot=screenshot, text_responses=text_responses)
+    if isinstance(action, ToolInputLeftClick):
+        return LeftClickStepOutput(coordinate=action.coordinate, text_responses=text_responses)
+    if isinstance(action, ToolInputType):
+        return TypeStepOutput(text=action.text, text_responses=text_responses)
+    if isinstance(action, ToolInputKey):
+        return KeyStepOutput(text=action.text, text_responses=text_responses)
+    if isinstance(action, ToolInputWait):
+        return WaitStepOutput(duration=action.duration, text_responses=text_responses)
+    raise AssertionError("unreachable")
+
+
 class HookEvent(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -180,7 +361,7 @@ class HookEvent(BaseModel):
     permission_mode: str = ""
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
-    tool_response: ToolResponse | None = None
+    tool_response: ToolResponse | list[ToolResponseBlock] | None = None
     tool_use_id: str | None = None
     prompt: str | None = None
     reason: str | None = None

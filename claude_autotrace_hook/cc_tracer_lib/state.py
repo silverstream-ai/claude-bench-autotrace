@@ -29,6 +29,7 @@ from cc_tracer_lib.models import (
     SubagentStop,
     ToolState,
     TranscriptState,
+    build_step_output,
 )
 from cc_tracer_lib.spans import make_context, send_span
 from cc_tracer_lib.transcript import (
@@ -538,7 +539,10 @@ class SessionStateManager:
             AL2_EXPERIMENT: "claude-code-session",
         }
 
-        if event.tool_input:
+        if isinstance(event.tool_response, list):
+            step_output = build_step_output(event.tool_input or {}, event.tool_response)
+            attributes["step_output"] = step_output.model_dump_json()
+        elif event.tool_input:
             agent_output = {
                 "actions": [{"name": event.tool_name, "arguments": event.tool_input}],
                 "llm_output": {},
