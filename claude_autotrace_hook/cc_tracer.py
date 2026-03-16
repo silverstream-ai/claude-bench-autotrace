@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+import base64
 import json
 import logging
 import sys
+import urllib.parse
+import urllib.request
 
 from opentelemetry.trace import Tracer
 
@@ -77,6 +80,27 @@ def main() -> None:
         harness=settings.harness,
     )
     process_event(event, tracer, manager)
+    if event.hook_event_name == "SessionEnd":
+        base = settings.collector_base_url
+        tracker = settings.endpoint_code
+        trace_id_b64 = base64.b64encode(manager.get_trace_id().bytes).decode()
+        url = f"{base}/last-runs?tracker={tracker}"
+        try:
+            api_url = f"{base}/api/leaderboard/last-runs?tracker={tracker}&limit=5"
+            with urllib.request.urlopen(api_url, timeout=3) as resp:
+                runs = json.loads(resp.read()).get("runs", [])
+            for run in runs:
+                if run.get("trace_id_b64") == trace_id_b64:
+                    encoded_b64 = urllib.parse.quote(trace_id_b64)
+                    url = f"{base}/deep-dive/run/{run['run_id']}?tracker={tracker}&traceIdB64={encoded_b64}"
+                    break
+        except Exception:
+            pass
+        try:
+            with open("/dev/tty", "w") as tty:
+                tty.write(f"\nSession trace: {url}\n")
+        except OSError:
+            pass
     print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
