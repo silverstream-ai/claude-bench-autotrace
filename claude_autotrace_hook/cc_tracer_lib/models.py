@@ -8,9 +8,7 @@ from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
 STATE_DIR = pathlib.Path("/tmp/cc_tracer")
 
 # DO NOT EDIT - Mirrored from apps.leaderboard.backend.collector.span_models
@@ -270,16 +268,6 @@ class SubagentStop(BaseModel):
             agent_transcript_path=event.agent_transcript_path,
             stop_hook_active=event.stop_hook_active,
         )
-
-
-class ClaudeCodeTracingSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CLAUDE_CODE_", env_file=ENV_FILE, extra="ignore")
-
-    collector_base_url: str | None = None
-    endpoint_code: str | None = None
-    model: str = Field(default="claude-code")
-    harness: str = Field(default="claude-code-hooks")
-    notify_sessions: bool = Field(default=True)
 
 
 class MessageRole(StrEnum):

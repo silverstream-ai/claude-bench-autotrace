@@ -6,12 +6,11 @@ import sys
 from opentelemetry.trace import Tracer
 
 from cc_tracer_lib.models import (
-    ENV_FILE,
-    ClaudeCodeTracingSettings,
     HookEvent,
     SubagentStart,
     SubagentStop,
 )
+from cc_tracer_lib.settings import ClaudeCodeTracingSettings
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
 
@@ -52,21 +51,14 @@ def main() -> None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
-    if not settings.endpoint_code or not settings.collector_base_url:
+    if settings.endpoint_code is None or settings.collector_base_url is None:
         if event.hook_event_name == "SessionStart":
-            # Output to stdout so Claude sees it, and log to file
             print(
-                f'{{"status":"info","message":"Tracing disabled. '
-                f'Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in {ENV_FILE} to enable."}}'
+                '{"status":"info","message":"Tracing disabled. '
+                "Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL "
+                'in a .env file (in the project dir or any parent) to enable."}'
             )
-            logging.warning(
-                "Claude Code tracing disabled "
-                "(set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
-                ENV_FILE,
-            )
-
-        else:
-            logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
+            logging.warning("Claude Code tracing disabled")
         return
 
     manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
