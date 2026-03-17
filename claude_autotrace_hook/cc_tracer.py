@@ -6,12 +6,11 @@ import sys
 from opentelemetry.trace import Tracer
 
 from cc_tracer_lib.models import (
-    ENV_FILE,
-    ClaudeCodeTracingSettings,
     HookEvent,
     SubagentStart,
     SubagentStop,
 )
+from cc_tracer_lib.settings import ENV_FILE, ClaudeCodeTracingSettings
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
 
@@ -52,7 +51,7 @@ def main() -> None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
-    if not settings.endpoint_code or not settings.collector_base_url:
+    if settings.endpoint_code is None or settings.collector_base_url is None:
         if event.hook_event_name == "SessionStart":
             # Output to stdout so Claude sees it, and log to file
             print(
@@ -66,7 +65,7 @@ def main() -> None:
             )
 
         else:
-            logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
+            logging.debug("(Hook exiting, no endpoint config in %s)", ENV_FILE)
         return
 
     manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
