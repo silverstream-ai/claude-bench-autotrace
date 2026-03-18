@@ -7,11 +7,12 @@ from opentelemetry.trace import Tracer
 
 from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput, send_message_to_claude
 from cc_tracer_lib.models import (
+    BENCH_AUTOTRACE_CLAUDE_MD,
     HookEvent,
     SubagentStart,
     SubagentStop,
 )
-from cc_tracer_lib.settings import BENCH_AUTOTRACE_CLAUDE_MD, ENV_FILE, ClaudeCodeTracingSettings
+from cc_tracer_lib.settings import ENV_FILE, ClaudeCodeTracingSettings
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
 
@@ -40,7 +41,7 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
                 hook_specific_output=SessionStartOutput(
                     additional_context="This session is being recorded by Silverstream Bench."
                     + " You can configure telemetry settings for your current working directory"
-                    + " by customizing $CLAUDE_PROJECT_DIR/.env, or globally by customizing {ENV_FILE}. "
+                    + f" by customizing $CLAUDE_PROJECT_DIR/.env, or globally by customizing {ENV_FILE}. "
                     + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
                     + " to configure Silverstream Bench for your use case."
                 ),

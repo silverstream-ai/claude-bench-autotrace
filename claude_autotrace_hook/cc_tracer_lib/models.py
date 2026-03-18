@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+BENCH_AUTOTRACE_DIR = pathlib.Path(__file__).parent.parent.parent
+BENCH_AUTOTRACE_CLAUDE_MD = BENCH_AUTOTRACE_DIR / "CLAUDE.md"
 STATE_DIR = pathlib.Path("/tmp/cc_tracer")
 
 # DO NOT EDIT - Mirrored from apps.leaderboard.backend.collector.span_models
