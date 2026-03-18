@@ -1,11 +1,10 @@
 import json
 from unittest.mock import MagicMock
 
+from cc_tracer import process_event
 from pytest import CaptureFixture
 
 from cc_tracer_lib.models import HookEvent
-
-from cc_tracer import process_event
 
 
 def _make_session_start_event() -> HookEvent:
