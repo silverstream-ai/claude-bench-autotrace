@@ -5,12 +5,12 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_REPO_ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
+ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
 
 
 def _collect_env_files() -> tuple[Path, ...]:
     """Collect .env files: repo root (lowest priority) then ancestors up to project dir (highest)."""
-    files: list[Path] = [_REPO_ENV_FILE]
+    files: list[Path] = [ENV_FILE]
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if project_dir is not None:
         cur = Path(project_dir).resolve()
