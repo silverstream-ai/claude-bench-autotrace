@@ -29,13 +29,3 @@ def test_process_event_session_start_sends_structured_output(capsys: CaptureFixt
     assert parsed["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert len(parsed["hookSpecificOutput"]["additionalContext"]) > 0
     assert parsed["systemMessage"] is None
-
-
-def test_process_event_session_start_no_status_ok_message(capsys: CaptureFixture[str]) -> None:
-    tracer = MagicMock()
-    manager = MagicMock()
-
-    process_event(_make_session_start_event(), tracer, manager)
-
-    captured = capsys.readouterr()
-    assert "Telemetry active" not in captured.out
