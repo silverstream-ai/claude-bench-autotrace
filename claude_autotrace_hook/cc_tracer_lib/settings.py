@@ -1,11 +1,12 @@
 import os
-import pathlib
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
+from cc_tracer_lib.models import BENCH_AUTOTRACE_DIR
+
+ENV_FILE = BENCH_AUTOTRACE_DIR / ".env"
 
 
 def _collect_env_files() -> tuple[Path, ...]:
