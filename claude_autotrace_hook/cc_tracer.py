@@ -5,12 +5,13 @@ import sys
 
 from opentelemetry.trace import Tracer
 
+from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput, send_message_to_claude
 from cc_tracer_lib.models import (
     HookEvent,
     SubagentStart,
     SubagentStop,
 )
-from cc_tracer_lib.settings import ENV_FILE, ClaudeCodeTracingSettings
+from cc_tracer_lib.settings import BENCH_AUTOTRACE_CLAUDE_MD, ENV_FILE, ClaudeCodeTracingSettings
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
 
@@ -34,6 +35,18 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
     elif event.hook_event_name == "SubagentStop":
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionStart":
+        send_message_to_claude(
+            ClaudeCodeHookOutput(
+                hook_specific_output=SessionStartOutput(
+                    additional_context="This session is being recorded by Silverstream Bench."
+                    + " You can configure telemetry settings for your current working directory"
+                    + " by customizing $CLAUDE_PROJECT_DIR/.env, or globally by customizing {ENV_FILE}. "
+                    + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
+                    + " to configure Silverstream Bench for your use case."
+                ),
+                system_message=None,
+            )
+        )
         print(f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}')
         logging.info("Started new session: %s", event.session_id)
     elif event.hook_event_name == "SessionEnd":

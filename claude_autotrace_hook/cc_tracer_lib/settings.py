@@ -5,7 +5,9 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_FILE = pathlib.Path(__file__).parent.parent.parent / ".env"
+BENCH_AUTOTRACE_DIR = pathlib.Path(__file__).parent.parent.parent
+ENV_FILE = BENCH_AUTOTRACE_DIR / ".env"
+BENCH_AUTOTRACE_CLAUDE_MD = BENCH_AUTOTRACE_DIR / "CLAUDE.md"
 
 
 def _collect_env_files() -> tuple[Path, ...]:
