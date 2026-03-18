@@ -47,7 +47,6 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
                 system_message=None,
             )
         )
-        print(f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}')
         logging.info("Started new session: %s", event.session_id)
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
