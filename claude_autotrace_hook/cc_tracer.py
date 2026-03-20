@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import logging
 import sys
@@ -9,12 +10,17 @@ from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput
 from cc_tracer_lib.models import (
     BENCH_AUTOTRACE_CLAUDE_MD,
     HookEvent,
+    LockedState,
     SubagentStart,
     SubagentStop,
 )
 from cc_tracer_lib.settings import ENV_FILE, ClaudeCodeTracingSettings
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
+
+
+def _dedup_key(event_data: dict) -> str:
+    return hashlib.md5(json.dumps(event_data, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager) -> None:
@@ -58,15 +64,42 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
     manager.save(event.session_id)
 
 
-def main() -> None:
-    settings = ClaudeCodeTracingSettings()
-    event_data = json.load(sys.stdin)
+def run_hook(
+    event_data: dict,
+    tracer: Tracer,
+    notify_sessions: bool,
+) -> str | None:
     event = HookEvent.model_validate(event_data)
-    logging.debug("Received event: %s", event.hook_event_name)
+    dedup = _dedup_key(event_data)
+    logging.debug("Received event: %s (dedup=%s)", event.hook_event_name, dedup)
+
+    with LockedState(event.session_id) as lock:
+        if lock.state is not None and dedup in lock.state.seen_events:
+            logging.debug("Duplicate event %s (dedup=%s), skipping", event.hook_event_name, dedup)
+            return None
+
+        manager = SessionStateManager.from_state(lock.state, notify_sessions)
+        process_event(event, tracer, manager)
+
+        # Always persist the dedup key so a concurrent hook on the same
+        # inode (opened before unlink) sees it and skips.
+        manager.state.record_event(dedup)
+        lock.state = manager.state
+        lock.save()
+
+        if manager.deleted:
+            lock.delete()
+
+    return f'{{"status":"ok","event":"{event.hook_event_name}"}}'
+
+
+def main() -> None:
+    event_data = json.load(sys.stdin)
+    settings = ClaudeCodeTracingSettings()
+    event = HookEvent.model_validate(event_data)
 
     if settings.endpoint_code is None or settings.collector_base_url is None:
         if event.hook_event_name == "SessionStart":
-            # Output to stdout so Claude sees it, and log to file
             print(
                 f'{{"status":"info","message":"Tracing disabled. '
                 f'Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in {ENV_FILE} to enable."}}'
@@ -76,20 +109,20 @@ def main() -> None:
                 "(set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
                 ENV_FILE,
             )
-
         else:
             logging.debug("(Hook exiting, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
     tracer = setup_tracer(
         collector_base_url=settings.collector_base_url,
         endpoint_code=settings.endpoint_code,
         model=settings.model,
         harness=settings.harness,
     )
-    process_event(event, tracer, manager)
-    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+
+    result = run_hook(event_data, tracer, settings.notify_sessions)
+    if result is not None:
+        print(result)
 
 
 if __name__ == "__main__":

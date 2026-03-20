@@ -47,6 +47,15 @@ logger = logging.getLogger(__name__)
 class SessionStateManager:
     def __init__(self, state: SessionState):
         self._state = state
+        self._deleted = False
+
+    @property
+    def state(self) -> SessionState:
+        return self._state
+
+    @property
+    def deleted(self) -> bool:
+        return self._deleted
 
     @classmethod
     def start_session(cls, notify: bool) -> Self:
@@ -74,11 +83,18 @@ class SessionStateManager:
             return cls.start_session(notify_new_session)
         return cls(state)
 
+    @classmethod
+    def from_state(cls, state: SessionState | None, notify_new_session: bool) -> Self:
+        if state is None:
+            return cls.start_session(notify_new_session)
+        return cls(state)
+
     def save(self, session_id: str) -> None:
-        self._state.save(session_id)
+        # No-op: persistence is handled by LockedState in the caller.
+        pass
 
     def delete(self, session_id: str) -> None:
-        SessionState.delete(session_id)
+        self._deleted = True
 
     def ensure_episode_started(self) -> None:
         if self._state.episode is not None:
