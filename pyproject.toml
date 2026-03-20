@@ -86,9 +86,6 @@ classmethod-decorators = [
     "root_validator",
 ]
 
-[tool.pytest.ini_options]
-pythonpath = ["claude_autotrace_hook"]
-
 [tool.mypy]
 strict = true
 plugins = ['pydantic.mypy']
