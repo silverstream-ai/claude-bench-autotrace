@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ def _make_session_start_event() -> HookEvent:
     )
 
 
-def _make_pre_tool_use(session_id: str, tool_use_id: str) -> dict:
+def _make_pre_tool_use(session_id: str, tool_use_id: str) -> dict[str, Any]:
     return {
         "hook_event_name": "PreToolUse",
         "session_id": session_id,

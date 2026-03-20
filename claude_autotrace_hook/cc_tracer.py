@@ -2,6 +2,7 @@
 import json
 import logging
 import sys
+from typing import Any
 
 from opentelemetry.trace import Tracer
 
@@ -59,7 +60,7 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
 
 
 def run_hook(
-    event_data: dict,
+    event_data: dict[str, Any],
     tracer: Tracer,
     notify_sessions: bool,
 ) -> str | None:
