@@ -63,23 +63,25 @@ def run_hook(
     event_data: dict[str, Any],
     tracer: Tracer,
     notify_sessions: bool,
-) -> str | None:
+) -> None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
     manager = SessionStateManager.from_session_id(event.session_id, notify_sessions)
     process_event(event, tracer, manager)
 
-    return f'{{"status":"ok","event":"{event.hook_event_name}"}}'
+    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
 def main() -> None:
-    event_data = json.load(sys.stdin)
     settings = ClaudeCodeTracingSettings()
+    event_data = json.load(sys.stdin)
     event = HookEvent.model_validate(event_data)
+    logging.debug("Received event: %s", event.hook_event_name)
 
     if settings.endpoint_code is None or settings.collector_base_url is None:
         if event.hook_event_name == "SessionStart":
+            # Output to stdout so Claude sees it, and log to file
             print(
                 f'{{"status":"info","message":"Tracing disabled. '
                 f'Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in {ENV_FILE} to enable."}}'
@@ -89,6 +91,7 @@ def main() -> None:
                 "(set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
                 ENV_FILE,
             )
+
         else:
             logging.debug("(Hook exiting, no endpoint config in %s)", ENV_FILE)
         return
@@ -100,9 +103,7 @@ def main() -> None:
         harness=settings.harness,
     )
 
-    result = run_hook(event_data, tracer, settings.notify_sessions)
-    if result is not None:
-        print(result)
+    run_hook(event_data, tracer, settings.notify_sessions)
 
 
 if __name__ == "__main__":
