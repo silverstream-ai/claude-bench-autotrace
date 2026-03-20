@@ -1,0 +1,35 @@
+name: Unit Tests
+
+on: [ push ]
+
+jobs:
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python-version: [ "3.12" ]
+    env:
+      PYTHONPATH: ${{ github.workspace }}/claude_autotrace_hook
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: |
+          uv pip install --upgrade pip --system
+          uv pip install -r requirements-tests.txt --system
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ --log-level=INFO --durations=20
