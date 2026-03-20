@@ -58,15 +58,27 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
     manager.save(event.session_id)
 
 
-def main() -> None:
-    settings = ClaudeCodeTracingSettings()
-    event_data = json.load(sys.stdin)
+def run_hook(
+    event_data: dict,
+    tracer: Tracer,
+    notify_sessions: bool,
+) -> str | None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
+    manager = SessionStateManager.from_session_id(event.session_id, notify_sessions)
+    process_event(event, tracer, manager)
+
+    return f'{{"status":"ok","event":"{event.hook_event_name}"}}'
+
+
+def main() -> None:
+    event_data = json.load(sys.stdin)
+    settings = ClaudeCodeTracingSettings()
+    event = HookEvent.model_validate(event_data)
+
     if settings.endpoint_code is None or settings.collector_base_url is None:
         if event.hook_event_name == "SessionStart":
-            # Output to stdout so Claude sees it, and log to file
             print(
                 f'{{"status":"info","message":"Tracing disabled. '
                 f'Set both CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in {ENV_FILE} to enable."}}'
@@ -76,20 +88,20 @@ def main() -> None:
                 "(set CLAUDE_CODE_ENDPOINT_CODE and CLAUDE_CODE_COLLECTOR_BASE_URL in %s to enable)",
                 ENV_FILE,
             )
-
         else:
             logging.debug("(Hook exiting, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
     tracer = setup_tracer(
         collector_base_url=settings.collector_base_url,
         endpoint_code=settings.endpoint_code,
         model=settings.model,
         harness=settings.harness,
     )
-    process_event(event, tracer, manager)
-    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+
+    result = run_hook(event_data, tracer, settings.notify_sessions)
+    if result is not None:
+        print(result)
 
 
 if __name__ == "__main__":
