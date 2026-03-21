@@ -179,6 +179,7 @@ class HookEvent(BaseModel):
     session_id: str
     cwd: str
     transcript_path: str
+    model: str | None = None
     permission_mode: str = ""
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
@@ -362,6 +363,7 @@ SEEN_EVENTS_MAX = 100
 class SessionState(BaseModel):
     trace_id: UUID
     session_start_time: datetime
+    model: str | None
     chat_history: list[ChatMessage]
     queued_chat_history: list[ChatMessage]
     # Single back-and-forth in the main worker

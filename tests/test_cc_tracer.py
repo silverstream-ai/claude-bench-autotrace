@@ -17,6 +17,7 @@ def _make_session_start_event() -> HookEvent:
         session_id="test-session-123",
         cwd="/tmp",
         transcript_path="/tmp/transcript.jsonl",
+        model="claude-sonnet-4-6",
     )
 
 
@@ -117,3 +118,32 @@ def test_run_hook_session_end_deletes_state() -> None:
     run_hook(session_end, tracer, False)
 
     assert SessionState.from_session_id(session_id) is None
+
+
+def test_run_hook_persists_model_from_session_start() -> None:
+    session_id = f"test-{uuid4()}"
+    tracer = MagicMock(spec=Tracer)
+    session_start = _make_session_start_event().model_copy(update={"session_id": session_id}).model_dump(mode="json")
+
+    try:
+        run_hook(session_start, tracer, False)
+
+        state = SessionState.from_session_id(session_id)
+        assert state is not None
+        assert state.model == "claude-sonnet-4-6"
+    finally:
+        SessionState.delete(session_id)
+
+
+def test_run_hook_keeps_unknown_model_for_mid_session_attach() -> None:
+    session_id = f"test-{uuid4()}"
+    tracer = MagicMock(spec=Tracer)
+
+    try:
+        run_hook(_make_pre_tool_use(session_id, "tu_0"), tracer, False)
+
+        state = SessionState.from_session_id(session_id)
+        assert state is not None
+        assert state.model is None
+    finally:
+        SessionState.delete(session_id)

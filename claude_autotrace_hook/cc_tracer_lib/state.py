@@ -62,6 +62,7 @@ class SessionStateManager:
         state = SessionState(
             trace_id=uuid4(),
             session_start_time=datetime.now(tz=UTC),
+            model=None,
             transcript_state=TranscriptState(agent_parents={}, tool_parents={}, chat_messages=[]),
             chat_history=[],
             queued_chat_history=[],
@@ -105,7 +106,6 @@ class SessionStateManager:
             start_ns=time.time_ns(),
             prompt=None,
         )
-        logger.info("Starting episode, trace id: %s, span id: %s", self._state.trace_id, self._state.episode.span_id)
 
     def update_episode_prompt(self, prompt: str) -> None:
         if not self.has_prompt():
@@ -321,6 +321,8 @@ class SessionStateManager:
             AL2_TYPE: TYPE_EPISODE,
             AL2_NAME: "claude-code-session",
         }
+        if self._state.model is not None:
+            attributes[AL2_MODEL] = self._state.model
         attributes["prompt"] = episode_data.prompt.text if episode_data.prompt is not None else None
         attributes["chat_messages_json"] = (
             TypeAdapter(list[ChatMessage]).dump_json(self._state.chat_history).decode("utf-8")
@@ -429,7 +431,6 @@ class SessionStateManager:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
 
-        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.subagent.{agent.agent_type}",
@@ -580,7 +581,6 @@ class SessionStateManager:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
 
-        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.tool.{event.tool_name}",
@@ -600,6 +600,8 @@ class SessionStateManager:
             AL2_TYPE: TYPE_TRACE,
             AL2_NAME: "session",
         }
+        if self._state.model is not None:
+            attributes[AL2_MODEL] = self._state.model
         if self._state.prompt is not None:
             attributes["prompt"] = self._state.prompt.text
 

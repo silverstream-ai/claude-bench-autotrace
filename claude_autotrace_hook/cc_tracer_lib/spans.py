@@ -20,7 +20,6 @@ from opentelemetry.trace import (
 
 from cc_tracer_lib.models import (
     AL2_HARNESS,
-    AL2_MODEL,
     INSTRUMENTATION_NAME,
     INSTRUMENTATION_VERSION,
     SERVICE_NAME,
@@ -45,13 +44,12 @@ def make_context(trace_id: UUID, parent_span_id: UUID | None) -> Context:
     return set_span_in_context(NonRecordingSpan(span_context))
 
 
-def setup_tracer(collector_base_url: str, endpoint_code: str, model: str, harness: str) -> Tracer:
+def setup_tracer(collector_base_url: str, endpoint_code: str, harness: str) -> Tracer:
     endpoint = collector_base_url + TRACE_ENDPOINT_PATH.format(endpoint_code)
     resource = Resource.create(
         {
-            "service.name": SERVICE_NAME,
-            AL2_MODEL: model,
-            AL2_HARNESS: harness,
+        "service.name": SERVICE_NAME,
+        AL2_HARNESS: harness,
         }
     )
     provider = TracerProvider(resource=resource)
