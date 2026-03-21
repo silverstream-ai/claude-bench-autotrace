@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import sys
+from typing import Any
 
 from opentelemetry.trace import Tracer
 
@@ -65,7 +66,7 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
 
 
 def run_hook(
-    event_data: dict,
+    event_data: dict[str, Any],
     tracer: Tracer,
     notify_sessions: bool,
 ) -> str | None:
@@ -94,8 +95,8 @@ def run_hook(
 
 
 def main() -> None:
-    event_data = json.load(sys.stdin)
     settings = ClaudeCodeTracingSettings()
+    event_data = json.load(sys.stdin)
     event = HookEvent.model_validate(event_data)
 
     if settings.endpoint_code is None or settings.collector_base_url is None:
