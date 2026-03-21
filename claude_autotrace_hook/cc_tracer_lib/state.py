@@ -10,6 +10,7 @@ from opentelemetry.trace import Tracer
 from pydantic import TypeAdapter
 
 from cc_tracer_lib.models import (
+    AL2_MODEL,
     AL2_NAME,
     AL2_TYPE,
     THINK_MAX_LENGTH,
