@@ -106,6 +106,7 @@ class SessionStateManager:
             start_ns=time.time_ns(),
             prompt=None,
         )
+        logger.info("Starting episode, trace id: %s, span id: %s", self._state.trace_id, self._state.episode.span_id)
 
     def update_episode_prompt(self, prompt: str) -> None:
         if not self.has_prompt():
@@ -431,6 +432,7 @@ class SessionStateManager:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
 
+        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.subagent.{agent.agent_type}",
@@ -581,6 +583,7 @@ class SessionStateManager:
                 # If failed, just leave the episode span as a parent (shrugs)
                 parent_span = attempt
 
+        logger.debug("Sending span to OTEL collector.")
         send_span(
             tracer,
             name=f"claude_code.tool.{event.tool_name}",

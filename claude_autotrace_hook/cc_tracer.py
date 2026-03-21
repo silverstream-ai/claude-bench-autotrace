@@ -72,9 +72,11 @@ def run_hook(
 ) -> str | None:
     event = HookEvent.model_validate(event_data)
     dedup = _dedup_key(event_data)
+    logging.debug("Received event: %s (dedup=%s)", event.hook_event_name, dedup)
 
     with LockedState(event.session_id) as lock:
         if lock.state is not None and dedup in lock.state.seen_events:
+            logging.debug("Duplicate event %s (dedup=%s), skipping", event.hook_event_name, dedup)
             return None
 
         manager = SessionStateManager.from_state(lock.state, notify_sessions)
