@@ -1,10 +1,12 @@
 # ruff: noqa: N815 -- camelCase fields mirror Claude Code's JSON transcript format verbatim
+import fcntl
 from datetime import datetime
 from enum import StrEnum
 import logging
 import pathlib
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from types import TracebackType
+from typing import IO, Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -354,6 +356,9 @@ class ToolState(BaseModel):
     span_id: UUID
 
 
+SEEN_EVENTS_MAX = 100
+
+
 class SessionState(BaseModel):
     trace_id: UUID
     session_start_time: datetime
@@ -370,6 +375,7 @@ class SessionState(BaseModel):
     start_time_ns: int
     session_span_id: UUID
     prompt: PromptState | None
+    seen_events: list[str] = []
 
     @classmethod
     def from_session_id(cls, session_id: str) -> Self | None:
@@ -392,6 +398,61 @@ class SessionState(BaseModel):
         path = STATE_DIR / f"{session_id}.json"
         if path.exists():
             path.unlink()
+
+    def record_event(self, dedup_key: str) -> None:
+        self.seen_events.append(dedup_key)
+        if len(self.seen_events) > SEEN_EVENTS_MAX:
+            self.seen_events = self.seen_events[-SEEN_EVENTS_MAX:]
+
+
+class LockedState:
+    def __init__(self, session_id: str) -> None:
+        self._session_id = session_id
+        self._path = STATE_DIR / f"{session_id}.json"
+        self._fd: IO[str] | None = None
+        self._delete_on_exit = False
+        self.state: SessionState | None = None
+
+    def __enter__(self) -> Self:
+        STATE_DIR.mkdir(exist_ok=True)
+        self._fd = open(self._path, "a+")  # noqa: SIM115 -- need persistent fd for flock
+        fcntl.flock(self._fd, fcntl.LOCK_EX)
+        self._fd.seek(0)
+        data = self._fd.read()
+        if data != "":
+            try:
+                self.state = SessionState.model_validate_json(data)
+            except ValidationError as e:
+                logger.warning("Session state is corrupted, dropping it: %s.", e)
+                self.state = None
+        else:
+            self.state = None
+        return self
+
+    def save(self) -> None:
+        assert self._fd is not None
+        assert self.state is not None
+        self._fd.seek(0)
+        self._fd.truncate()
+        self._fd.write(self.state.model_dump_json())
+        self._fd.flush()
+
+    def delete(self) -> None:
+        # Deferred: actual unlink happens in __exit__ after lock release
+        self._delete_on_exit = True
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self._fd is not None:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            self._fd.close()
+            self._fd = None
+        if self._delete_on_exit and self._path.exists():
+            self._path.unlink()
 
     def check_new_assistant_messages(self, chat: list[ChatMessage]) -> list[ChatMessage]:
         """
