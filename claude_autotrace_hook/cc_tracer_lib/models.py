@@ -82,7 +82,6 @@ class TranscriptEntry(BaseModel):
     messageId: str | None = None
     snapshot: dict[str, Any] | None = None
     message: AssistantMessage | dict[str, Any] | str | None = None
-    toolUseResult: dict[str, Any] | str | None = None
     sourceToolAssistantUUID: str | None = None
     toolUseID: str | None = None
     stopReason: str | None = None
@@ -180,7 +179,7 @@ class HookEvent(BaseModel):
     permission_mode: str = ""
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
-    tool_response: ToolResponse | None = None
+    tool_response: list[ToolResponse] | ToolResponse | None = None
     tool_use_id: str | None = None
     prompt: str | None = None
     reason: str | None = None
