@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 import json
 import logging
+import pathlib
 import sys
+from uuid import UUID
+
+BENCH_AUTOTRACE_CLAUDE_MD = pathlib.Path(__file__).parent.parent / "CLAUDE.md"
 
 from opentelemetry.trace import Tracer
 
@@ -14,9 +18,15 @@ from cc_tracer_lib.models import (
 )
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
+from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput, send_message_to_claude
 
 
-def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager) -> None:
+def process_event(
+    event: HookEvent,
+    tracer: Tracer,
+    manager: SessionStateManager,
+    settings: ClaudeCodeTracingSettings,
+) -> ClaudeCodeHookOutput | None:
     if event.hook_event_name == "PreToolUse":
         manager.handle_tool_selected(event)
     elif event.hook_event_name == "PostToolUse":
@@ -29,21 +39,39 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
         manager.handle_prompt_submit(event.prompt)
     elif event.hook_event_name == "Stop":
         # Despite the unfortunate name, this is basically the other end of `UserPromptSubmit`.
-        manager.handle_stop(tracer, event)
+        if settings.endpoint_code is not None:
+            try:
+                tracker_id = UUID(settings.endpoint_code)
+                system_message = manager.handle_stop(tracer, event, settings.collector_base_url, tracker_id)
+                return ClaudeCodeHookOutput(hook_specific_output=None, system_message=system_message)
+            except ValueError:
+                logging.warning("CLAUDE_CODE_ENDPOINT_CODE is not a valid UUID: %s", settings.endpoint_code)
+        return None
     elif event.hook_event_name == "SubagentStart":
         manager.handle_subagent_start(SubagentStart.from_hook_event(event))
     elif event.hook_event_name == "SubagentStop":
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif event.hook_event_name == "SessionStart":
-        print(f'{{"status":"ok","message":"Telemetry active. Trace ID: {manager.get_trace_id()}"}}')
         logging.info("Started new session: %s", event.session_id)
+        manager.save(event.session_id)
+        return ClaudeCodeHookOutput(
+            hook_specific_output=SessionStartOutput(
+                additional_context="This session is being recorded by Silverstream Bench."
+                + " You can configure telemetry settings for your current working directory"
+                + f" by customizing $CLAUDE_PROJECT_DIR/.env, or globally by customizing {ENV_FILE}. "
+                + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
+                + " to configure Silverstream Bench for your use case."
+            ),
+            system_message="Remember you are connected to Silverstream Bench. Trace Id: " + str(manager.get_trace_id()),
+        )
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
-        return
+        return None
     else:
         logging.info("Unknown event received: %s", event.hook_event_name)
 
     manager.save(event.session_id)
+    return None
 
 
 def main() -> None:
@@ -76,8 +104,11 @@ def main() -> None:
         model=settings.model,
         harness=settings.harness,
     )
-    process_event(event, tracer, manager)
-    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+    output = process_event(event, tracer, manager, settings)
+    if output is not None:
+        send_message_to_claude(output)
+    else:
+        print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 from opentelemetry.trace import Tracer
 from pydantic import TypeAdapter
 
+
+from cc_tracer_lib.deep_dive import build_deep_dive_url
 from cc_tracer_lib.models import (
     AL2_EXPERIMENT,
     AL2_NAME,
@@ -282,7 +284,13 @@ class SessionStateManager:
         self.update_episode_prompt(prompt)
         self.add_chat_message(prompt, MessageRole.USER)
 
-    def handle_stop(self, tracer: Tracer, event: HookEvent) -> None:
+    def handle_stop(
+        self,
+        tracer: Tracer,
+        event: HookEvent,
+        collector_base_url: str | None = None,
+        tracker_id: UUID | None = None,
+    ) -> str | None:
         update_transcript(self._state.transcript_state, Path(event.transcript_path))
         parent_span_id = self._state.episode.span_id if self._state.episode is not None else self._state.session_span_id
         self._check_transcript_for_new_chats(
@@ -301,8 +309,13 @@ class SessionStateManager:
             )
 
         episode_data = self.end_episode()
+        system_message = None
+        if collector_base_url is not None and tracker_id is not None:
+            deep_dive_url = build_deep_dive_url(collector_base_url, tracker_id, self._state.trace_id)
+            system_message = f"Review your session on bench: \n{deep_dive_url}"
+
         if episode_data is None:
-            return
+            return system_message
 
         task_name = (
             truncate(episode_data.prompt.text, 50).replace("\n", " ") if episode_data.prompt is not None else "turn"
@@ -335,6 +348,7 @@ class SessionStateManager:
         )
 
         self._state.episode = None
+        return system_message
 
     def handle_subagent_start(self, event: SubagentStart) -> None:
         self.ensure_episode_started()
