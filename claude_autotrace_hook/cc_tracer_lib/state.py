@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 from opentelemetry.trace import Tracer
 from pydantic import TypeAdapter
 
-from cc_tracer_lib.url_generator import build_deep_dive_url
 from cc_tracer_lib.models import (
     AL2_NAME,
     AL2_TYPE,
