@@ -62,7 +62,7 @@ def process_event(
                 + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
                 + " to configure Silverstream Bench for your use case."
             ),
-            system_message="Remember you are connected to Silverstream Bench. Trace Id: " + str(manager.get_trace_id()),
+            system_message="This session is being recorded on Silverstream Bench.",
         )
     elif event.hook_event_name == "SessionEnd":
         manager.handle_session_end(tracer, event)
