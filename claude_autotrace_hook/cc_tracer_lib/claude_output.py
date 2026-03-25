@@ -55,8 +55,7 @@ def build_output_start_message(
 
     deep_dive_url = build_deep_dive_url(collector_base_url, tracker_id, trace_id)
     system_message = (
-        "This session is being recorded on Silverstream Bench. "
-        f"You can check it out here:\n{deep_dive_url}"
+        "This session is being recorded on Silverstream Bench. You can check it out here:\n{deep_dive_url}"
     )
 
     return ClaudeCodeHookOutput(
