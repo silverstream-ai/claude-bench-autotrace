@@ -2,7 +2,6 @@ import base64
 from urllib.parse import urlencode
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-# Mirror of silverstream/leaderboard/backend/collector/repository.py:NO_EPISODE_RUN_NAMESPACE
 NO_EPISODE_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "silverstream/leaderboard/no-episode-run")
 
 
