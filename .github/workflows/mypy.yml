@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install --upgrade pip --system
-          uv pip install -r requirements.txt mypy pydantic[mypy] --system
+          uv pip install -r requirements-tests.txt mypy pydantic[mypy] --system
 
       - name: Fetch default branch
         run: |

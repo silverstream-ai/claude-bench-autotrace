@@ -12,7 +12,6 @@ from pydantic import TypeAdapter
 
 from cc_tracer_lib.deep_dive import build_deep_dive_url
 from cc_tracer_lib.models import (
-    AL2_EXPERIMENT,
     AL2_NAME,
     AL2_TYPE,
     THINK_MAX_LENGTH,
@@ -148,7 +147,6 @@ class SessionStateManager:
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_STEP,
             AL2_NAME: "chat",
-            AL2_EXPERIMENT: "claude-code-session",
             "agent_output": json.dumps(
                 {
                     "actions": [{"name": "Chat", "arguments": chat_message.model_dump()}],
@@ -223,7 +221,6 @@ class SessionStateManager:
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_STEP,
             AL2_NAME: "interrupt",
-            AL2_EXPERIMENT: "claude-code-session",
             "prompt": chat_message.message,
         }
         timestamp_ns = int(chat_message.timestamp * 1.0e09)
@@ -317,14 +314,9 @@ class SessionStateManager:
         if episode_data is None:
             return system_message
 
-        task_name = (
-            truncate(episode_data.prompt.text, 50).replace("\n", " ") if episode_data.prompt is not None else "turn"
-        )
-
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_EPISODE,
-            AL2_NAME: task_name,
-            AL2_EXPERIMENT: "claude-code-session",
+            AL2_NAME: "claude-code-session",
         }
         attributes["prompt"] = episode_data.prompt.text if episode_data.prompt is not None else None
         attributes["chat_messages_json"] = (
@@ -417,7 +409,6 @@ class SessionStateManager:
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_STEP,
             AL2_NAME: f"subagent.{agent.agent_type}",
-            AL2_EXPERIMENT: "claude-code-session",
         }
         attributes["agent_id"] = event.agent_id
         if first_user_chat is not None:
@@ -549,7 +540,6 @@ class SessionStateManager:
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_STEP,
             AL2_NAME: f"tool.{event.tool_name}",
-            AL2_EXPERIMENT: "claude-code-session",
         }
 
         if event.tool_input:
@@ -607,7 +597,6 @@ class SessionStateManager:
         attributes: dict[str, Any] = {
             AL2_TYPE: TYPE_TRACE,
             AL2_NAME: "session",
-            AL2_EXPERIMENT: "claude-code-session",
         }
         if self._state.prompt is not None:
             attributes["prompt"] = self._state.prompt.text

@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
 import json
 import logging
-import pathlib
 import sys
 from uuid import UUID
 
-BENCH_AUTOTRACE_CLAUDE_MD = pathlib.Path(__file__).parent.parent / "CLAUDE.md"
-
 from opentelemetry.trace import Tracer
 
+from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput, send_message_to_claude
 from cc_tracer_lib.models import (
-    ENV_FILE,
-    ClaudeCodeTracingSettings,
+    BENCH_AUTOTRACE_CLAUDE_MD,
     HookEvent,
     SubagentStart,
     SubagentStop,
 )
+from cc_tracer_lib.settings import ENV_FILE, ClaudeCodeTracingSettings
 from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
-from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput, send_message_to_claude
 
 
-def process_event(
+def process_event(  # noqa: C901
     event: HookEvent,
     tracer: Tracer,
     manager: SessionStateManager,
@@ -39,13 +36,15 @@ def process_event(
         manager.handle_prompt_submit(event.prompt)
     elif event.hook_event_name == "Stop":
         # Despite the unfortunate name, this is basically the other end of `UserPromptSubmit`.
+        tracker_id: UUID | None = None
         if settings.endpoint_code is not None:
             try:
                 tracker_id = UUID(settings.endpoint_code)
-                system_message = manager.handle_stop(tracer, event, settings.collector_base_url, tracker_id)
-                return ClaudeCodeHookOutput(hook_specific_output=None, system_message=system_message)
             except ValueError:
                 logging.warning("CLAUDE_CODE_ENDPOINT_CODE is not a valid UUID: %s", settings.endpoint_code)
+        system_message = manager.handle_stop(tracer, event, settings.collector_base_url, tracker_id)
+        if system_message is not None:
+            return ClaudeCodeHookOutput(hook_specific_output=None, system_message=system_message)
         return None
     elif event.hook_event_name == "SubagentStart":
         manager.handle_subagent_start(SubagentStart.from_hook_event(event))
@@ -80,7 +79,7 @@ def main() -> None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
-    if not settings.endpoint_code or not settings.collector_base_url:
+    if settings.endpoint_code is None or settings.collector_base_url is None:
         if event.hook_event_name == "SessionStart":
             # Output to stdout so Claude sees it, and log to file
             print(
@@ -94,7 +93,7 @@ def main() -> None:
             )
 
         else:
-            logging.debug("(Hook existing, no endpoint config in %s)", ENV_FILE)
+            logging.debug("(Hook exiting, no endpoint config in %s)", ENV_FILE)
         return
 
     manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
