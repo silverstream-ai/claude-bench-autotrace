@@ -40,7 +40,6 @@ def send_message_to_claude(message: ClaudeCodeHookOutput) -> None:
     print(message.model_dump_json(by_alias=True, exclude_none=True))
 
 
-
 def build_output_start_message(
     collector_base_url: str | None,
     endpoint_code: str | None,
