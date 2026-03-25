@@ -298,7 +298,6 @@ class SessionStateManager:
             )
 
         episode_data = self.end_episode()
-        
         if episode_data is None:
             return
 
