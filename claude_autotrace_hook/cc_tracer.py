@@ -29,42 +29,42 @@ def process_event(
 ) -> ClaudeCodeHookOutput | None:
     output: ClaudeCodeHookOutput | None = None
 
-    match event.hook_event_name:
-        case "PreToolUse":
-            manager.handle_tool_selected(event)
-        case "PostToolUse":
-            manager.handle_tool_use(tracer, event)
-        case "Notification":
-            manager.handle_notification(tracer, event)
-        case "UserPromptSubmit":
-            if event.prompt is None:
-                raise ValueError("UserPromptSubmit event must have a prompt")
-            manager.handle_prompt_submit(event.prompt)
-        case "Stop":
-            # Despite the unfortunate name, this is basically the other end of `UserPromptSubmit`.
-            manager.handle_stop(tracer, event)
-            output = build_output_end_message(
-                settings.collector_base_url,
-                settings.endpoint_code,
-                manager.get_trace_id(),
-            )
-        case "SubagentStart":
-            manager.handle_subagent_start(SubagentStart.from_hook_event(event))
-        case "SubagentStop":
-            manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
-        case "SessionStart":
-            logging.info("Started new session: %s", event.session_id)
-            manager.save(event.session_id)
-            output = build_output_start_message(
-                settings.collector_base_url,
-                settings.endpoint_code,
-                manager.get_trace_id(),
-            )
-        case "SessionEnd":
-            manager.handle_session_end(tracer, event)
-            return None
-        case _:
-            logging.info("Unknown event received: %s", event.hook_event_name)
+    name = event.hook_event_name
+    if name == "PreToolUse":
+        manager.handle_tool_selected(event)
+    elif name == "PostToolUse":
+        manager.handle_tool_use(tracer, event)
+    elif name == "Notification":
+        manager.handle_notification(tracer, event)
+    elif name == "UserPromptSubmit":
+        if event.prompt is None:
+            raise ValueError("UserPromptSubmit event must have a prompt")
+        manager.handle_prompt_submit(event.prompt)
+    elif name == "Stop":
+        # Despite the unfortunate name, this is basically the other end of `UserPromptSubmit`.
+        manager.handle_stop(tracer, event)
+        output = build_output_end_message(
+            settings.collector_base_url,
+            settings.endpoint_code,
+            manager.get_trace_id(),
+        )
+    elif name == "SubagentStart":
+        manager.handle_subagent_start(SubagentStart.from_hook_event(event))
+    elif name == "SubagentStop":
+        manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
+    elif name == "SessionStart":
+        logging.info("Started new session: %s", event.session_id)
+        manager.save(event.session_id)
+        output = build_output_start_message(
+            settings.collector_base_url,
+            settings.endpoint_code,
+            manager.get_trace_id(),
+        )
+    elif name == "SessionEnd":
+        manager.handle_session_end(tracer, event)
+        return None
+    else:
+        logging.info("Unknown event received: %s", name)
 
     manager.save(event.session_id)
     return output
