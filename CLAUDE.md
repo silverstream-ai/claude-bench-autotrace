@@ -34,3 +34,14 @@ Hooks run on every tool use. After creating `.env`, you'll see `{"status":"ok",.
 - `CLAUDE_CODE_ENDPOINT_CODE=<string> ` modifies the tracker associated with your runs.
 - `CLAUDE_CODE_COLLECTOR_BASE_URL=<url>` modifies the OTel server traces are sent to.
 - `CLAUDE_CODE_NOTIFY_SESSIONS=<bool>` (optional) toggles system notifications for the user when sessions are started.
+
+### Status bar
+
+A clickable deep-dive link is shown in the Claude Code status bar via the `statusLine` setting. To enable or disable it, add or remove the following block in the relevant `settings.json`:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "\"$CLAUDE_PROJECT_DIR/claude_autotrace_hook/statusline.sh\""
+}
+```
