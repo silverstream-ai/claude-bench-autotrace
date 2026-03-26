@@ -22,6 +22,7 @@ If tracing is disabled or erroring, set it up:
 
 3. To install (global/system setup), integrate the contents of .claude/settings.json into the global settings.json in your home directory (~/.claude/settings.json), changing the hook commands to use the absolute path to the repo instead of `$CLAUDE_PROJECT_DIR`.
     - IMPORTANT: This file is the user's global Claude config. Make sure not to override it! You should _integrate_ the settings you read in this repository with the existing config.
+    - IMPORTANT: Before installing, ask the user whether they want the status bar enabled. Only include the `statusLine` block when they explicitly say yes — do not add it by default.
 
 4. To uninstall the global/system setup, revert the changes you made to settings.json. IMPORTANT: Remember that this is the user's global config! Only revert changes specific to this hook and this repository's directory.
 
