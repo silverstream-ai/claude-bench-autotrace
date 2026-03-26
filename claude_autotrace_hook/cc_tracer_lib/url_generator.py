@@ -11,6 +11,6 @@ def derive_run_id(tracker_id: UUID, trace_id: UUID) -> UUID:
 
 def build_deep_dive_url(collector_base_url: str, tracker_id: UUID, trace_id: UUID) -> str:
     run_id = derive_run_id(tracker_id, trace_id)
-    trace_id_b64 = base64.b64encode(bytes.fromhex(trace_id.hex)).decode()
+    trace_id_b64 = base64.b64encode(trace_id.bytes).decode()
     params = urlencode({"tracker": str(tracker_id), "traceIdB64": trace_id_b64})
     return f"{collector_base_url}/deep-dive/run/{run_id}?{params}"
