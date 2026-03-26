@@ -1,5 +1,4 @@
 import json
-from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID
 
@@ -23,11 +22,10 @@ def _make_session_start_event() -> HookEvent:
     )
 
 
-def _make_settings(**kwargs: Any) -> ClaudeCodeTracingSettings:
+def _make_settings() -> ClaudeCodeTracingSettings:
     return ClaudeCodeTracingSettings(
         collector_base_url="https://bench.example.com",
         endpoint_code=str(_FAKE_TRACKER_ID),
-        **kwargs,
     )
 
 
