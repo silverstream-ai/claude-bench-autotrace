@@ -1,4 +1,5 @@
 import json
+from typing import TypedDict, Unpack
 from unittest.mock import MagicMock
 from uuid import UUID
 
@@ -13,19 +14,26 @@ _FAKE_TRACKER_ID = UUID("ffb4acbe-19a1-4d0b-9a40-3cafb29ea895")
 _FAKE_TRACE_ID = UUID("12345678-1234-5678-1234-567812345678")
 
 
+class _SettingsOverrides(TypedDict, total=False):
+    model: str
+    harness: str
+    notify_sessions: bool
+
+
+def _make_settings(**kwargs: Unpack[_SettingsOverrides]) -> ClaudeCodeTracingSettings:
+    return ClaudeCodeTracingSettings(
+        collector_base_url="https://bench.example.com",
+        endpoint_code=str(_FAKE_TRACKER_ID),
+        **kwargs,
+    )
+
+
 def _make_session_start_event() -> HookEvent:
     return HookEvent(
         hook_event_name="SessionStart",
         session_id="test-session-123",
         cwd="/tmp",
         transcript_path="/tmp/transcript.jsonl",
-    )
-
-
-def _make_settings() -> ClaudeCodeTracingSettings:
-    return ClaudeCodeTracingSettings(
-        collector_base_url="https://bench.example.com",
-        endpoint_code=str(_FAKE_TRACKER_ID),
     )
 
 
