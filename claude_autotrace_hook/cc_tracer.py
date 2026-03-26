@@ -2,6 +2,7 @@
 import json
 import logging
 import sys
+from typing import Any
 
 from opentelemetry.trace import Tracer
 
@@ -58,6 +59,20 @@ def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager
     manager.save(event.session_id)
 
 
+def run_hook(
+    event_data: dict[str, Any],
+    tracer: Tracer,
+    notify_sessions: bool,
+) -> None:
+    event = HookEvent.model_validate(event_data)
+    logging.debug("Received event: %s", event.hook_event_name)
+
+    manager = SessionStateManager.from_session_id(event.session_id, notify_sessions)
+    process_event(event, tracer, manager)
+
+    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+
+
 def main() -> None:
     settings = ClaudeCodeTracingSettings()
     event_data = json.load(sys.stdin)
@@ -81,15 +96,14 @@ def main() -> None:
             logging.debug("(Hook exiting, no endpoint config in %s)", ENV_FILE)
         return
 
-    manager = SessionStateManager.from_session_id(event.session_id, settings.notify_sessions)
     tracer = setup_tracer(
         collector_base_url=settings.collector_base_url,
         endpoint_code=settings.endpoint_code,
         model=settings.model,
         harness=settings.harness,
     )
-    process_event(event, tracer, manager)
-    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+
+    run_hook(event_data, tracer, settings.notify_sessions)
 
 
 if __name__ == "__main__":
