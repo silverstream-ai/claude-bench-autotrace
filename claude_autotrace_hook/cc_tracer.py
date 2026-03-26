@@ -49,6 +49,7 @@ def process_event(
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif name == "SessionStart":
         logging.info("Started new session: %s", event.session_id)
+        cleanup_session_url()
         manager.save(event.session_id)
         output = build_output_start_message(
             settings.collector_base_url,
