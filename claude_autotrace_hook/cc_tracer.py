@@ -8,7 +8,6 @@ from opentelemetry.trace import Tracer
 from cc_tracer_lib.claude_output import (
     ClaudeCodeHookOutput,
     build_output_start_message,
-    cleanup_session_url,
     send_message_to_claude,
 )
 from cc_tracer_lib.models import (
@@ -49,17 +48,14 @@ def process_event(
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
     elif name == "SessionStart":
         logging.info("Started new session: %s", event.session_id)
-        cleanup_session_url(event.session_id)
         manager.save(event.session_id)
         output = build_output_start_message(
             settings.collector_base_url,
             settings.endpoint_code,
             manager.get_trace_id(),
-            event.session_id,
         )
     elif name == "SessionEnd":
         manager.handle_session_end(tracer, event)
-        cleanup_session_url(event.session_id)
         return None
     else:
         logging.info("Unknown event received: %s", name)
