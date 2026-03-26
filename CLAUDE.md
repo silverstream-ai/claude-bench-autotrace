@@ -28,6 +28,8 @@ If tracing is disabled or erroring, set it up:
 
 5. Notify the user of the result. Provide the user with a tracking link for their runs: `${collector_endpoint}/last-runs?tracker={collector_code}`. If global install/uninstall was done, note that the change will apply on new claude code sessions (suggest they restart their existing sessions).
 
+6. Status bar. You have the possibility to provide a special status bar that provides Bench deep dive links when you click on it (in some terminals, it has to be a CTRL + Click). However, some users may not want to override their preferences about it. Always ask if the users want the custom sidebar or not, even for a local installation. If they say no, follow the "Status Bar" section to understand how to disable it
+
 Hooks run on every tool use. After creating `.env`, you'll see `{"status":"ok",...}` on subsequent tool calls confirming telemetry is active.
 
 ### Configuration options
