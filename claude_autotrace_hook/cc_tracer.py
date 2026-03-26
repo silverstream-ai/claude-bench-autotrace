@@ -7,7 +7,6 @@ from opentelemetry.trace import Tracer
 
 from cc_tracer_lib.claude_output import (
     ClaudeCodeHookOutput,
-    build_output_end_message,
     build_output_start_message,
     send_message_to_claude,
 )
@@ -43,11 +42,6 @@ def process_event(
     elif name == "Stop":
         # Despite the unfortunate name, this is basically the other end of `UserPromptSubmit`.
         manager.handle_stop(tracer, event)
-        output = build_output_end_message(
-            settings.collector_base_url,
-            settings.endpoint_code,
-            manager.get_trace_id(),
-        )
     elif name == "SubagentStart":
         manager.handle_subagent_start(SubagentStart.from_hook_event(event))
     elif name == "SubagentStop":

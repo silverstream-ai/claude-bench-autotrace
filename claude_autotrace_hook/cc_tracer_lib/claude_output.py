@@ -1,4 +1,7 @@
+import contextlib
 import logging
+from pathlib import Path
+import tempfile
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -54,9 +57,8 @@ def build_output_start_message(
         return None
 
     deep_dive_url = build_deep_dive_url(collector_base_url, tracker_id, trace_id)
-    system_message = (
-        f"This session is being recorded on Silverstream Bench. You can check it out here:\n{deep_dive_url}"
-    )
+    with contextlib.suppress(OSError):
+        Path(tempfile.gettempdir(), "bench_deep_dive_url").write_text(deep_dive_url)
 
     return ClaudeCodeHookOutput(
         hook_specific_output=SessionStartOutput(
@@ -66,23 +68,5 @@ def build_output_start_message(
             + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
             + " to configure Silverstream Bench for your use case."
         ),
-        system_message=system_message,
+        system_message=None,
     )
-
-
-def build_output_end_message(
-    collector_base_url: str | None,
-    endpoint_code: str | None,
-    trace_id: UUID,
-) -> ClaudeCodeHookOutput | None:
-    if collector_base_url is None or endpoint_code is None:
-        return None
-    try:
-        tracker_id = UUID(endpoint_code)
-    except ValueError:
-        logging.warning("CLAUDE_CODE_ENDPOINT_CODE is not a valid UUID: %s", endpoint_code)
-        return None
-
-    deep_dive_url = build_deep_dive_url(collector_base_url, tracker_id, trace_id)
-    system_message = f"Review your session on bench: \n{deep_dive_url}"
-    return ClaudeCodeHookOutput(hook_specific_output=None, system_message=system_message)
