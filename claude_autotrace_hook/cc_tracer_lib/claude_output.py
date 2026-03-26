@@ -39,6 +39,11 @@ class ClaudeCodeHookOutput(BaseModel):
     system_message: str | None = Field(alias="systemMessage")
 
 
+def cleanup_session_url() -> None:
+    with contextlib.suppress(OSError):
+        Path(tempfile.gettempdir(), "bench_deep_dive_url").unlink(missing_ok=True)
+
+
 def send_message_to_claude(message: ClaudeCodeHookOutput) -> None:
     print(message.model_dump_json(by_alias=True, exclude_none=True))
 
@@ -68,5 +73,5 @@ def build_output_start_message(
             + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
             + " to configure Silverstream Bench for your use case."
         ),
-        system_message=None,
+        system_message=f"This session is being recorded on Silverstream Bench.\n{deep_dive_url}",
     )

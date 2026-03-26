@@ -44,4 +44,4 @@ def test_process_event_session_start_sends_structured_output(capsys: CaptureFixt
 
     assert parsed["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert len(parsed["hookSpecificOutput"]["additionalContext"]) > 0
-    assert "systemMessage" not in parsed
+    assert "bench.example.com" in parsed["systemMessage"]
