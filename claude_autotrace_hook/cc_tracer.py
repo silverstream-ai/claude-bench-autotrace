@@ -22,10 +22,7 @@ from cc_tracer_lib.state import SessionStateManager
 
 
 def process_event(
-    event: HookEvent,
-    tracer: Tracer,
-    manager: SessionStateManager,
-    settings: ClaudeCodeTracingSettings
+    event: HookEvent, tracer: Tracer, manager: SessionStateManager, settings: ClaudeCodeTracingSettings
 ) -> ClaudeCodeHookOutput | None:
     output: ClaudeCodeHookOutput | None = None
     name = event.hook_event_name
@@ -74,7 +71,7 @@ def run_hook(
     logging.debug("Received event: %s", event.hook_event_name)
 
     manager = SessionStateManager.from_session_id(event.session_id, notify_sessions)
-    
+
     output = process_event(event, tracer, manager, settings)
     if output is not None:
         send_message_to_claude(output)
