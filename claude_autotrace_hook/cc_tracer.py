@@ -6,9 +6,12 @@ from typing import Any
 
 from opentelemetry.trace import Tracer
 
-from cc_tracer_lib.claude_output import ClaudeCodeHookOutput, SessionStartOutput, send_message_to_claude
+from cc_tracer_lib.claude_output import (
+    ClaudeCodeHookOutput,
+    build_output_start_message,
+    send_message_to_claude,
+)
 from cc_tracer_lib.models import (
-    BENCH_AUTOTRACE_CLAUDE_MD,
     HookEvent,
     SubagentStart,
     SubagentStop,
@@ -18,59 +21,62 @@ from cc_tracer_lib.spans import setup_tracer
 from cc_tracer_lib.state import SessionStateManager
 
 
-def process_event(event: HookEvent, tracer: Tracer, manager: SessionStateManager) -> None:
-    if event.hook_event_name == "PreToolUse":
+def process_event(
+    event: HookEvent, tracer: Tracer, manager: SessionStateManager, settings: ClaudeCodeTracingSettings
+) -> ClaudeCodeHookOutput | None:
+    output: ClaudeCodeHookOutput | None = None
+    name = event.hook_event_name
+    if name == "PreToolUse":
         manager.handle_tool_selected(event)
-    elif event.hook_event_name == "PostToolUse":
+    elif name == "PostToolUse":
         manager.handle_tool_use(tracer, event)
-    elif event.hook_event_name == "Notification":
+    elif name == "Notification":
         manager.handle_notification(tracer, event)
-    elif event.hook_event_name == "UserPromptSubmit":
+    elif name == "UserPromptSubmit":
         if event.prompt is None:
             raise ValueError("UserPromptSubmit event must have a prompt")
         manager.handle_prompt_submit(event.prompt)
-    elif event.hook_event_name == "Stop":
+    elif name == "Stop":
         # Despite the unfortunate name, this is basically the other end of `UserPromptSubmit`.
         manager.handle_stop(tracer, event)
-    elif event.hook_event_name == "SubagentStart":
+    elif name == "SubagentStart":
         manager.handle_subagent_start(SubagentStart.from_hook_event(event))
-    elif event.hook_event_name == "SubagentStop":
+    elif name == "SubagentStop":
         manager.handle_subagent_stop(tracer, SubagentStop.from_hook_event(event))
-    elif event.hook_event_name == "SessionStart":
-        send_message_to_claude(
-            ClaudeCodeHookOutput(
-                hook_specific_output=SessionStartOutput(
-                    additional_context="This session is being recorded by Silverstream Bench."
-                    + " You can configure telemetry settings for your current working directory"
-                    + f" by customizing $CLAUDE_PROJECT_DIR/.env, or globally by customizing {ENV_FILE}. "
-                    + f"Refer to {BENCH_AUTOTRACE_CLAUDE_MD} for specifics on how"
-                    + " to configure Silverstream Bench for your use case."
-                ),
-                system_message=None,
-            )
-        )
+    elif name == "SessionStart":
         logging.info("Started new session: %s", event.session_id)
-    elif event.hook_event_name == "SessionEnd":
+        manager.save(event.session_id)
+        output = build_output_start_message(
+            settings.collector_base_url,
+            settings.endpoint_code,
+            manager.get_trace_id(),
+        )
+    elif name == "SessionEnd":
         manager.handle_session_end(tracer, event)
-        return
+        return None
     else:
-        logging.info("Unknown event received: %s", event.hook_event_name)
+        logging.info("Unknown event received: %s", name)
 
     manager.save(event.session_id)
+    return output
 
 
 def run_hook(
     event_data: dict[str, Any],
     tracer: Tracer,
     notify_sessions: bool,
+    settings: ClaudeCodeTracingSettings,
 ) -> None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
     manager = SessionStateManager.from_session_id(event.session_id, notify_sessions)
-    process_event(event, tracer, manager)
 
-    print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
+    output = process_event(event, tracer, manager, settings)
+    if output is not None:
+        send_message_to_claude(output)
+    else:
+        print(f'{{"status":"ok","event":"{event.hook_event_name}"}}')
 
 
 def main() -> None:
@@ -103,7 +109,7 @@ def main() -> None:
         harness=settings.harness,
     )
 
-    run_hook(event_data, tracer, settings.notify_sessions)
+    run_hook(event_data, tracer, settings.notify_sessions, settings)
 
 
 if __name__ == "__main__":
