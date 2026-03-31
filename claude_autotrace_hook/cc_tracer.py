@@ -25,10 +25,9 @@ def process_event(
     event: HookEvent,
     tracer: Tracer,
     manager: SessionStateManager,
-    settings: ClaudeCodeTracingSettings,
+    settings: ClaudeCodeTracingSettings
 ) -> ClaudeCodeHookOutput | None:
     output: ClaudeCodeHookOutput | None = None
-
     name = event.hook_event_name
     if name == "PreToolUse":
         manager.handle_tool_selected(event)
@@ -69,13 +68,14 @@ def run_hook(
     event_data: dict[str, Any],
     tracer: Tracer,
     notify_sessions: bool,
+    settings: ClaudeCodeTracingSettings,
 ) -> None:
     event = HookEvent.model_validate(event_data)
     logging.debug("Received event: %s", event.hook_event_name)
 
     manager = SessionStateManager.from_session_id(event.session_id, notify_sessions)
     
-    output = process_event(event, tracer, manager)
+    output = process_event(event, tracer, manager, settings)
     if output is not None:
         send_message_to_claude(output)
     else:
@@ -112,7 +112,7 @@ def main() -> None:
         harness=settings.harness,
     )
 
-    run_hook(event_data, tracer, settings.notify_sessions)
+    run_hook(event_data, tracer, settings.notify_sessions, settings)
 
 
 if __name__ == "__main__":
