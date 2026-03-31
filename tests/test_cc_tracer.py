@@ -1,13 +1,24 @@
 import json
 from typing import Any
 from unittest.mock import MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from cc_tracer import process_event, run_hook
+from cc_tracer import process_event, run_hook, send_message_to_claude
 from opentelemetry.trace import Tracer
 from pytest import CaptureFixture
 
 from cc_tracer_lib.models import HookEvent, SessionState
+from cc_tracer_lib.settings import ClaudeCodeTracingSettings
+
+_FAKE_TRACE_ID = UUID("11111111-1111-1111-1111-111111111111")
+_FAKE_ENDPOINT_CODE = "22222222-2222-2222-2222-222222222222"
+
+
+def _make_settings() -> ClaudeCodeTracingSettings:
+    return ClaudeCodeTracingSettings(
+        collector_base_url="https://bench.silverstream.ai",
+        endpoint_code=_FAKE_ENDPOINT_CODE,
+    )
 
 
 def _make_session_start_event() -> HookEvent:
@@ -43,7 +54,9 @@ def test_process_event_session_start_sends_structured_output(capsys: CaptureFixt
 
     assert parsed["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert len(parsed["hookSpecificOutput"]["additionalContext"]) > 0
-    assert parsed["systemMessage"] is None
+    assert isinstance(parsed["systemMessage"], str)
+    assert parsed["systemMessage"]
+    assert "deep-dive/run/" in parsed["systemMessage"]
 
 
 def test_run_hook_creates_session_state() -> None:
@@ -51,7 +64,7 @@ def test_run_hook_creates_session_state() -> None:
     tracer = MagicMock(spec=Tracer)
 
     try:
-        run_hook(_make_pre_tool_use(session_id, "tu_0"), tracer, False)
+        run_hook(_make_pre_tool_use(session_id, "tu_0"), tracer, False, _make_settings())
 
         state = SessionState.from_session_id(session_id)
         assert state is not None
@@ -64,8 +77,8 @@ def test_run_hook_accumulates_state_across_events() -> None:
     tracer = MagicMock(spec=Tracer)
 
     try:
-        run_hook(_make_pre_tool_use(session_id, "tu_0"), tracer, False)
-        run_hook(_make_pre_tool_use(session_id, "tu_1"), tracer, False)
+        run_hook(_make_pre_tool_use(session_id, "tu_0"), tracer, False, _make_settings())
+        run_hook(_make_pre_tool_use(session_id, "tu_1"), tracer, False, _make_settings())
 
         state = SessionState.from_session_id(session_id)
         assert state is not None
@@ -84,6 +97,6 @@ def test_run_hook_session_end_deletes_state() -> None:
         "transcript_path": "/tmp/transcript.jsonl",
     }
 
-    run_hook(session_end, tracer, False)
+    run_hook(session_end, tracer, False, _make_settings())
 
     assert SessionState.from_session_id(session_id) is None
