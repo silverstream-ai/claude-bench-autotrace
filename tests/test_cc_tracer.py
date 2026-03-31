@@ -3,10 +3,11 @@ from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
-from cc_tracer import process_event, run_hook, send_message_to_claude
+from cc_tracer import process_event, run_hook
 from opentelemetry.trace import Tracer
 from pytest import CaptureFixture
 
+from cc_tracer_lib.claude_output import send_message_to_claude
 from cc_tracer_lib.models import HookEvent, SessionState
 from cc_tracer_lib.settings import ClaudeCodeTracingSettings
 
